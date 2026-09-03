@@ -198,5 +198,14 @@ curl -X POST http://127.0.0.1:7860/v1/chat/completions \
 
 ---
 
+## 🙏 Ucapan Terima Kasih & Sumber Referensi
+
+Proyek ini dibangun dan dikembangkan lebih lanjut berdasarkan riset serta fondasi luar biasa dari:
+
+- 🌟 **[YuJunZhiXue/qwen2API](https://github.com/YuJunZhiXue/qwen2API)** — Fondasi awal arsitektur Go backend gateway, adapter protokol multi-format (OpenAI, Anthropic, Gemini), dan sistem pool akun.
+- 📱 **[Qwen Android APK Wrapper (`qwen.mjs`)](https://www.kitsulabs.xyz/code/55ee58a5b60c)** oleh Shannz (KitsuLabs) — Referensi implementasi protokol resmi Android APK (`ai.qwenlm.chat.android`), signature token WAF `app_waf`, serta alur login langsung kata sandi SHA-256 (`/api/v2/auths/signin`).
+
+---
+
 ## 📄 Lisensi
 Proyek ini didistribusikan di bawah lisensi **GNU General Public License v3.0 (GPL-3.0)**. Bebas digunakan, dipelajari, dan dikembangkan untuk kebutuhan personal maupun riset mandiri.

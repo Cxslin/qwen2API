@@ -75,7 +75,7 @@ cd frontend && npm install && npm run build && cd ..
 cd backend && go build -trimpath -ldflags="-s -w" -o ../bin/qwen2api-backend . && cd ..
 
 # Berikan izin eksekusi pada skrip manajemen
-chmod +x start.sh stop.sh
+chmod +x start.sh stop.sh update.sh
 ```
 
 ### 2. Jalankan Layanan
@@ -92,6 +92,32 @@ tail -f logs/output.log
 ```
 
 Akses Web Dashboard melalui browser di: **`http://localhost:7860`** (atau `http://IP_HP_ANDA:7860`).
+
+### 3. Cara Update ke Versi Terbaru 🔄
+
+Jika terdapat pembaruan fitur atau perbaikan di repositori GitHub, Anda dapat memperbarui proyek dengan sangat mudah:
+
+#### Opsi A: Menggunakan Skrip Otomatis (Rekomendasi)
+```bash
+./update.sh
+```
+*Skrip ini akan otomatis menghentikan server lama, menarik commit terbaru dari GitHub, mengompilasi ulang frontend & backend, lalu menyalakan kembali layanan.*
+
+#### Opsi B: Langkah Manual
+```bash
+# 1. Hentikan server yang sedang berjalan
+./stop.sh
+
+# 2. Ambil update terbaru dari GitHub
+git pull origin main
+
+# 3. Kompilasi ulang frontend & backend
+cd frontend && npm install && npm run build && cd ..
+cd backend && go build -trimpath -ldflags="-s -w" -o ../bin/qwen2api-backend . && cd ..
+
+# 4. Jalankan kembali di background
+./start.sh -d
+```
 
 ---
 

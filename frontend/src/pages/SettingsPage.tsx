@@ -45,7 +45,7 @@ export default function SettingsPage() {
 
   const fetchSettings = useCallback(() => {
     if (!getStoredApiKey()) {
-      toast.error("请先粘贴 ADMIN_KEY 或已有 API Key")
+      toast.error("Silakan masukkan ADMIN_KEY atau API Key terlebih dahulu")
       return
     }
     fetch(`${API_BASE}/api/admin/settings`, { headers: getAuthHeader() })
@@ -65,7 +65,7 @@ export default function SettingsPage() {
         setKeepaliveRunning(Boolean(data.keepalive_running))
         setModelAliases(JSON.stringify(data.model_aliases || {}, null, 2))
       })
-      .catch(err => toast.error(err instanceof Error ? err.message : "配置获取失败，请确认当前会话 Key"))
+      .catch(err => toast.error(err instanceof Error ? err.message : "Gagal mengambil konfigurasi, periksa Kunci Sesi"))
   }, [])
 
   const loadModels = useCallback(() => {
@@ -88,18 +88,18 @@ export default function SettingsPage() {
   const handleSaveSessionKey = () => {
     const key = setStoredApiKey(sessionKey)
     if (!key) {
-      toast.error("请输入 Key")
+      toast.error("Silakan masukkan Key")
       return
     }
     setSessionKey(key)
-    toast.success("Key 已规范化并保存到浏览器本地，正在刷新数据...")
+    toast.success("Key berhasil disimpan di browser, memuat ulang data...")
     fetchSettings()
   }
 
   const handleClearSessionKey = () => {
     clearStoredApiKey()
     setSessionKey("")
-    toast.success("Key 已清除")
+    toast.success("Key berhasil dihapus")
   }
 
   const handleSaveConcurrency = () => {
@@ -111,8 +111,8 @@ export default function SettingsPage() {
         global_max_inflight: Number(globalMaxInflight),
       })
     }).then(res => {
-      if(res.ok) { toast.success("并发配置已保存（运行时立即生效）"); fetchSettings(); }
-      else toast.error("保存失败")
+      if(res.ok) { toast.success("Konfigurasi konkurensi disimpan (berlaku langsung)"); fetchSettings(); }
+      else toast.error("Gagal menyimpan")
     })
   }
 
@@ -125,8 +125,8 @@ export default function SettingsPage() {
         chat_id_pool_ttl_seconds: Number(poolTtlMin) * 60,
       })
     }).then(res => {
-      if(res.ok) { toast.success("预热池配置已保存（运行时立即生效）"); fetchSettings(); }
-      else toast.error("保存失败")
+      if(res.ok) { toast.success("Konfigurasi pre-warm pool disimpan (berlaku langsung)"); fetchSettings(); }
+      else toast.error("Gagal menyimpan")
     })
   }
 
@@ -137,7 +137,7 @@ export default function SettingsPage() {
   const handleSaveKeepalive = () => {
     const interval = Number(keepaliveInterval)
     if (!Number.isFinite(interval) || interval < 5 || interval > 86400) {
-      toast.error("保活间隔必须在 5 - 86400 秒之间")
+      toast.error("Interval keepalive harus antara 5 - 86400 detik")
       return
     }
 
@@ -150,9 +150,9 @@ export default function SettingsPage() {
       })
     }).then(async res => {
       const data = await res.json().catch(() => ({}))
-      if(res.ok) { toast.success("保活配置已保存（运行时立即生效）"); fetchSettings(); }
-      else toast.error(data.detail || "保存失败")
-    }).catch(() => toast.error("保存失败"))
+      if(res.ok) { toast.success("Konfigurasi keepalive disimpan (berlaku langsung)"); fetchSettings(); }
+      else toast.error(data.detail || "Gagal menyimpan")
+    }).catch(() => toast.error("Gagal menyimpan"))
   }
 
   const handleSaveAliases = () => {
@@ -163,11 +163,11 @@ export default function SettingsPage() {
         headers: { "Content-Type": "application/json", ...getAuthHeader() },
         body: JSON.stringify({ model_aliases: parsed })
       }).then(res => {
-        if(res.ok) { toast.success("模型映射规则已更新"); fetchSettings(); }
-        else toast.error("保存失败")
+        if(res.ok) { toast.success("Aturan alias model berhasil diperbarui"); fetchSettings(); }
+        else toast.error("Gagal menyimpan")
       })
     } catch {
-      toast.error("JSON 格式错误，请检查语法")
+      toast.error("Format JSON tidak valid, periksa sintaks")
     }
   }
 
@@ -175,9 +175,9 @@ export default function SettingsPage() {
   const modelGroups = groupModelOptions(models)
 
   const curlExample = `# OpenAI streaming chat
-  curl ${baseUrl}/v1/chat/completions \
-    -H "Content-Type: application/json" \
-    -H "Authorization: Bearer YOUR_API_KEY" \
+  curl ${baseUrl}/v1/chat/completions \\
+    -H "Content-Type: application/json" \\
+    -H "Authorization: Bearer YOUR_API_KEY" \\
     -d '{
       "model": "qwen3.6-plus",
       "messages": [{"role": "user", "content": "Hello"}],
@@ -185,10 +185,10 @@ export default function SettingsPage() {
     }'
 
   # Anthropic / Claude Code
-  curl ${baseUrl}/anthropic/v1/messages \
-    -H "Content-Type: application/json" \
-    -H "x-api-key: YOUR_API_KEY" \
-    -H "anthropic-version: 2023-06-01" \
+  curl ${baseUrl}/anthropic/v1/messages \\
+    -H "Content-Type: application/json" \\
+    -H "x-api-key: YOUR_API_KEY" \\
+    -H "anthropic-version: 2023-06-01" \\
     -d '{
       "model": "claude-sonnet-4-6",
       "max_tokens": 1024,
@@ -196,17 +196,17 @@ export default function SettingsPage() {
     }'
 
   # Gemini
-  curl ${baseUrl}/v1beta/models/qwen3.6-plus:generateContent \
-    -H "Content-Type: application/json" \
-    -H "Authorization: Bearer YOUR_API_KEY" \
+  curl ${baseUrl}/v1beta/models/qwen3.6-plus:generateContent \\
+    -H "Content-Type: application/json" \\
+    -H "Authorization: Bearer YOUR_API_KEY" \\
     -d '{
       "contents": [{"parts": [{"text": "Hello"}]}]
     }'
 
   # Images
-  curl ${baseUrl}/v1/images/generations \
-    -H "Content-Type: application/json" \
-    -H "Authorization: Bearer YOUR_API_KEY" \
+  curl ${baseUrl}/v1/images/generations \\
+    -H "Content-Type: application/json" \\
+    -H "Authorization: Bearer YOUR_API_KEY" \\
     -d '{
       "model": "qwen3.6-plus-image",
       "prompt": "A cyberpunk cat with neon lights, ultra realistic",
@@ -216,9 +216,9 @@ export default function SettingsPage() {
     }'
 
   # Video
-  curl ${baseUrl}/v1/videos/generations \
-    -H "Content-Type: application/json" \
-    -H "Authorization: Bearer YOUR_API_KEY" \
+  curl ${baseUrl}/v1/videos/generations \\
+    -H "Content-Type: application/json" \\
+    -H "Authorization: Bearer YOUR_API_KEY" \\
     -d '{
       "model": "qwen3.6-plus-video",
       "prompt": "Generate a slow-motion ocean-wave video.",
@@ -234,11 +234,11 @@ export default function SettingsPage() {
         <div className="relative z-10 flex justify-between items-end flex-wrap gap-4">
           <div className="min-w-0">
             <div className="text-xs font-black uppercase tracking-[0.28em] text-muted-foreground">Control Plane</div>
-            <h2 className="mt-2 text-4xl font-black tracking-tight">系统设置</h2>
-            <p className="mt-2 text-muted-foreground">管理控制台认证、模型目录、并发参数、Chat_ID 预热池和调用示例。</p>
+            <h2 className="mt-2 text-4xl font-black tracking-tight">Pengaturan Sistem</h2>
+            <p className="mt-2 text-muted-foreground">Kelola autentikasi konsol, katalog model, parameter konkurensi, pre-warm pool Chat_ID, dan contoh pemanggilan API.</p>
           </div>
-        <Button variant="outline" onClick={() => {fetchSettings(); fetchModels(); toast.success("配置已刷新")}}>
-          <RefreshCw className="mr-2 h-4 w-4" /> 刷新配置
+        <Button variant="outline" onClick={() => {fetchSettings(); fetchModels(); toast.success("Konfigurasi disegarkan")}}>
+          <RefreshCw className="mr-2 h-4 w-4" /> Segarkan Konfigurasi
         </Button>
         </div>
       </section>
@@ -249,9 +249,9 @@ export default function SettingsPage() {
           <div className="admin-card-header flex flex-col space-y-1.5">
             <div className="flex items-center gap-2">
               <KeyRound className="h-5 w-5 text-primary" />
-              <h3 className="font-semibold leading-none tracking-tight">当前会话 Key</h3>
+              <h3 className="font-semibold leading-none tracking-tight">Kunci Sesi Saat Ini</h3>
             </div>
-            <p className="text-sm text-muted-foreground">浏览器不会自动读取后端 data/api_keys.json；请把 ADMIN_KEY 或该文件里已有的 API Key 粘贴到这里，控制台会保存到当前浏览器本地。</p>
+            <p className="text-sm text-muted-foreground">Browser tidak membaca otomatis data/api_keys.json. Silakan tempel ADMIN_KEY atau API Key yang ada di sini untuk disimpan secara lokal di browser Anda.</p>
           </div>
           <div className="p-6">
             <div className="flex gap-2 items-center flex-wrap">
@@ -259,11 +259,11 @@ export default function SettingsPage() {
                 type="password"
                 value={sessionKey}
                 onChange={e => setSessionKey(e.target.value)}
-                placeholder="粘贴 ADMIN_KEY 或 sk-qwen-..."
+                placeholder="Tempel ADMIN_KEY atau sk-qwen-..."
                 className="admin-input flex h-10 flex-1 min-w-[200px] px-3 py-2 text-sm"
               />
-              <Button onClick={handleSaveSessionKey}>保存</Button>
-              <Button variant="ghost" onClick={handleClearSessionKey}>清除</Button>
+              <Button onClick={handleSaveSessionKey}>Simpan</Button>
+              <Button variant="ghost" onClick={handleClearSessionKey}>Hapus</Button>
             </div>
           </div>
         </div>
@@ -273,12 +273,12 @@ export default function SettingsPage() {
           <div className="admin-card-header flex flex-col space-y-1.5">
             <div className="flex items-center gap-2">
               <ServerCrash className="h-5 w-5 text-primary" />
-              <h3 className="font-semibold leading-none tracking-tight">连接信息</h3>
+              <h3 className="font-semibold leading-none tracking-tight">Informasi Koneksi</h3>
             </div>
           </div>
           <div className="p-6">
             <div className="space-y-1 min-w-0">
-              <label className="text-sm font-medium">API 基础地址 (Base URL)</label>
+              <label className="text-sm font-medium">Base URL API</label>
               <input type="text" readOnly value={baseUrl} className="admin-input flex h-10 w-full px-3 py-2 text-sm font-mono text-muted-foreground" />
             </div>
           </div>
@@ -289,18 +289,18 @@ export default function SettingsPage() {
           <div className="admin-card-header flex flex-col space-y-1.5">
             <div className="flex items-center gap-2">
               <Settings2 className="h-5 w-5 text-primary" />
-              <h3 className="font-semibold leading-none tracking-tight">模型名称 / 模型目录</h3>
+              <h3 className="font-semibold leading-none tracking-tight">Katalog Model Tersedia</h3>
             </div>
-            <p className="text-sm text-muted-foreground">从 /v1/models 读取当前可用模型，按系列折叠展示。同系列例如 qwen3.6 会归在一个分组里。</p>
+            <p className="text-sm text-muted-foreground">Daftar model dari /v1/models, dikelompokkan berdasarkan keluarga model.</p>
           </div>
           <div className="p-6 space-y-3">
             {modelsLoading ? (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <RefreshCw className="h-4 w-4 animate-spin" /> 正在读取模型列表...
+                <RefreshCw className="h-4 w-4 animate-spin" /> Memuat daftar model...
               </div>
             ) : modelGroups.length === 0 ? (
               <div className="rounded-lg border border-dashed bg-muted/20 p-4 text-sm text-muted-foreground">
-                暂无模型数据。请确认会话 Key 有权限访问 /v1/models。
+                Tidak ada data model. Pastikan Kunci Sesi memiliki hak akses ke /v1/models.
               </div>
             ) : (
               modelGroups.map((group, index) => (
@@ -308,7 +308,7 @@ export default function SettingsPage() {
                   <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold">
                     {group.family}
                     <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-xs font-normal text-muted-foreground">
-                      {group.models.length} 个模型
+                      {group.models.length} model
                     </span>
                   </summary>
                   <div className="border-t divide-y">
@@ -334,7 +334,7 @@ export default function SettingsPage() {
                                 {label}
                               </span>
                             )) : (
-                              <span className="text-xs text-muted-foreground">对话</span>
+                              <span className="text-xs text-muted-foreground">Chat</span>
                             )}
                           </div>
                         </div>
@@ -352,21 +352,21 @@ export default function SettingsPage() {
           <div className="admin-card-header flex flex-col space-y-1.5">
             <div className="flex items-center gap-2">
               <Settings2 className="h-5 w-5 text-primary" />
-              <h3 className="font-semibold leading-none tracking-tight">核心并发参数</h3>
+              <h3 className="font-semibold leading-none tracking-tight">Parameter Konkurensi Inti</h3>
             </div>
-            <p className="text-sm text-muted-foreground">运行时并发槽位与排队阈值（需要在后端 config.json 中修改后重启生效）。</p>
+            <p className="text-sm text-muted-foreground">Batas slot konkurensi dan antrean pemrosesan permintaan.</p>
           </div>
           <div className="p-6 space-y-4">
             <div className="flex justify-between items-center py-2 border-b flex-wrap gap-2">
               <div className="space-y-1 min-w-0">
-                <span className="text-sm font-medium">当前系统版本</span>
+                <span className="text-sm font-medium">Versi Sistem</span>
               </div>
               <span className="font-mono text-sm">{settings?.version || "..."}</span>
             </div>
             <div className="flex justify-between items-center py-2 border-b flex-wrap gap-4">
               <div className="space-y-1 min-w-0 flex-1">
-                <span className="text-sm font-medium">单账号最大并发 (max_inflight_per_account)</span>
-                <p className="text-xs text-muted-foreground">每个上游账号同时处理的请求数。太大易被封，太小不充分利用。</p>
+                <span className="text-sm font-medium">Maks Konkurensi per Akun (max_inflight_per_account)</span>
+                <p className="text-xs text-muted-foreground">Jumlah permintaan simultan per akun upstream. Terlalu tinggi rentan diblokir, terlalu rendah kurang optimal.</p>
               </div>
               <input
                 type="number"
@@ -379,8 +379,8 @@ export default function SettingsPage() {
             </div>
             <div className="flex justify-between items-center py-2 border-b flex-wrap gap-4">
               <div className="space-y-1 min-w-0 flex-1">
-                <span className="text-sm font-medium">全局并发上限 (global_max_inflight)</span>
-                <p className="text-xs text-muted-foreground">所有账号合计同时在途请求的硬上限。0 = 不限。对应 Dashboard 的"异步任务"峰值。</p>
+                <span className="text-sm font-medium">Batas Konkurensi Global (global_max_inflight)</span>
+                <p className="text-xs text-muted-foreground">Batas total permintaan in-flight untuk semua akun. 0 = tanpa batas.</p>
               </div>
               <input
                 type="number"
@@ -392,7 +392,7 @@ export default function SettingsPage() {
               />
             </div>
             <div className="flex justify-end">
-              <Button size="sm" onClick={handleSaveConcurrency}>保存并发设置</Button>
+              <Button size="sm" onClick={handleSaveConcurrency}>Simpan Pengaturan Konkurensi</Button>
             </div>
           </div>
         </div>
@@ -402,15 +402,15 @@ export default function SettingsPage() {
           <div className="admin-card-header flex flex-col space-y-1.5">
             <div className="flex items-center gap-2">
               <Settings2 className="h-5 w-5 text-rose-500" />
-              <h3 className="font-semibold leading-none tracking-tight">Chat_ID 预热池</h3>
+              <h3 className="font-semibold leading-none tracking-tight">Pool Pre-warm Chat_ID</h3>
             </div>
-            <p className="text-sm text-muted-foreground">预建 chat_id 规避上游 /chats/new 握手 (0.5~6s)。运行时修改立即生效。</p>
+            <p className="text-sm text-muted-foreground">Membuat chat_id di awal untuk menghindari latensi handshake /chats/new (0.5~6s). Langsung berlaku saat disimpan.</p>
           </div>
           <div className="p-6 space-y-4">
             <div className="flex justify-between items-center py-2 border-b flex-wrap gap-4">
               <div className="space-y-1 min-w-0 flex-1">
-                <span className="text-sm font-medium">每账号目标数 (target)</span>
-                <p className="text-xs text-muted-foreground">每个账号预先挂多少个 chat_id 等着。默认 0，表示启动时不自动预热。</p>
+                <span className="text-sm font-medium">Target per Akun (target)</span>
+                <p className="text-xs text-muted-foreground">Jumlah chat_id yang disiapkan per akun. Default 0 (tanpa pre-warm otomatis).</p>
               </div>
               <input
                 type="number"
@@ -423,8 +423,8 @@ export default function SettingsPage() {
             </div>
             <div className="flex justify-between items-center py-2 border-b flex-wrap gap-4">
               <div className="space-y-1 min-w-0 flex-1">
-                <span className="text-sm font-medium">TTL (分钟)</span>
-                <p className="text-xs text-muted-foreground">chat_id 超过此时长则丢弃重建，避免被上游静默回收。默认 10。</p>
+                <span className="text-sm font-medium">Masa Berlaku / TTL (Menit)</span>
+                <p className="text-xs text-muted-foreground">chat_id yang melebihi durasi ini akan dibuang dan dibuat ulang agar tidak kedaluwarsa di upstream. Default 10 menit.</p>
               </div>
               <input
                 type="number"
@@ -436,7 +436,7 @@ export default function SettingsPage() {
               />
             </div>
             <div className="flex justify-end">
-              <Button size="sm" onClick={handleSavePool}>保存预热池设置</Button>
+              <Button size="sm" onClick={handleSavePool}>Simpan Pengaturan Pre-warm</Button>
             </div>
           </div>
         </div>
@@ -446,19 +446,19 @@ export default function SettingsPage() {
           <div className="flex flex-col space-y-1.5 p-6 border-b bg-muted/30">
             <div className="flex items-center gap-2">
               <Activity className="h-5 w-5 text-emerald-500" />
-              <h3 className="font-semibold leading-none tracking-tight">保活配置</h3>
+              <h3 className="font-semibold leading-none tracking-tight">Konfigurasi Keepalive</h3>
               <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${keepaliveRunning ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300" : "bg-muted text-muted-foreground"}`}>
-                {keepaliveRunning ? "运行中" : "未启用"}
+                {keepaliveRunning ? "Aktif" : "Nonaktif"}
               </span>
             </div>
-            <p className="text-sm text-muted-foreground">配置后服务会定期向该 URL 发送 GET 请求以保持在线；留空则禁用保活。</p>
+            <p className="text-sm text-muted-foreground">Layanan akan mengirim permintaan GET berkala ke URL ini untuk menjaga koneksi tetap hidup. Kosongkan untuk menonaktifkan.</p>
           </div>
           <div className="p-6 space-y-4">
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-3 flex-wrap">
-                <label className="text-sm font-medium">保活 URL</label>
+                <label className="text-sm font-medium">URL Keepalive</label>
                 <Button variant="outline" size="sm" onClick={handleUseCurrentKeepaliveUrl} disabled={keepaliveEnvLocked.includes("keepalive_url")}>
-                  <Activity className="mr-2 h-4 w-4" /> 一键设置保活
+                  <Activity className="mr-2 h-4 w-4" /> Set URL Saat Ini
                 </Button>
               </div>
               <input
@@ -470,13 +470,13 @@ export default function SettingsPage() {
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm disabled:cursor-not-allowed disabled:bg-muted"
               />
               {keepaliveEnvLocked.includes("keepalive_url") && (
-                <p className="text-xs text-muted-foreground">KEEPALIVE_URL 已由环境变量注入，面板不覆盖。</p>
+                <p className="text-xs text-muted-foreground">KEEPALIVE_URL diatur oleh environment variable dan dikunci.</p>
               )}
             </div>
             <div className="flex justify-between items-center py-2 border-b flex-wrap gap-4">
               <div className="space-y-1 min-w-0 flex-1">
-                <span className="text-sm font-medium">保活间隔（秒）</span>
-                <p className="text-xs text-muted-foreground">范围 5 - 86400 秒，默认 60。</p>
+                <span className="text-sm font-medium">Interval Keepalive (Detik)</span>
+                <p className="text-xs text-muted-foreground">Rentang 5 - 86400 detik, default 60 detik.</p>
               </div>
               <input
                 type="number"
@@ -489,11 +489,11 @@ export default function SettingsPage() {
               />
             </div>
             {keepaliveEnvLocked.includes("keepalive_interval") && (
-              <p className="text-xs text-muted-foreground">KEEPALIVE_INTERVAL 已由环境变量注入，面板不覆盖。</p>
+              <p className="text-xs text-muted-foreground">KEEPALIVE_INTERVAL diatur oleh environment variable dan dikunci.</p>
             )}
             <div className="flex justify-end">
               <Button size="sm" onClick={handleSaveKeepalive}>
-                <Save className="mr-2 h-4 w-4" /> 保存保活配置
+                <Save className="mr-2 h-4 w-4" /> Simpan Pengaturan Keepalive
               </Button>
             </div>
           </div>
@@ -502,8 +502,8 @@ export default function SettingsPage() {
         {/* Model Mapping */}
         <div className="admin-card min-w-0 overflow-hidden">
           <div className="admin-card-header flex flex-col space-y-1.5">
-            <h3 className="font-semibold leading-none tracking-tight">自动模型映射规则 (Model Aliases)</h3>
-            <p className="text-sm text-muted-foreground">下游传入的模型名称将被网关自动路由至以下千问实际模型。请使用标准 JSON 格式编辑。</p>
+            <h3 className="font-semibold leading-none tracking-tight">Aturan Alias Model (Model Aliases)</h3>
+            <p className="text-sm text-muted-foreground">Nama model dari klien downstream akan otomatis dirutekan ke model target Qwen di bawah ini. Gunakan format JSON standar.</p>
           </div>
           <div className="p-6">
             <textarea
@@ -514,7 +514,7 @@ export default function SettingsPage() {
               style={{ whiteSpace: "pre", overflowX: "auto" }}
             />
             <div className="mt-4 flex justify-end">
-              <Button onClick={handleSaveAliases}>保存映射</Button>
+              <Button onClick={handleSaveAliases}>Simpan Alias</Button>
             </div>
           </div>
         </div>
@@ -524,7 +524,7 @@ export default function SettingsPage() {
           <div className="admin-card-header flex flex-col space-y-1.5">
             <div className="flex items-center gap-2">
               <Code className="h-5 w-5 text-primary" />
-              <h3 className="font-semibold leading-none tracking-tight">使用示例</h3>
+              <h3 className="font-semibold leading-none tracking-tight">Contoh Pemanggilan API</h3>
             </div>
           </div>
           <div className="p-6 min-w-0">

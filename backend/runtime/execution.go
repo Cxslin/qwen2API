@@ -125,7 +125,7 @@ func ParseToolDirectiveOnce(state RuntimeAttemptState, tools []map[string]any) R
 		}
 	}
 	if strings.TrimSpace(state.AnswerText) == "" && strings.TrimSpace(state.ReasoningText) == "" {
-		return RuntimeToolDirective{ToolBlocks: []map[string]any{{"type": "text", "text": "Upstream returned an empty response. Continue from the last confirmed task state."}}, StopReason: "end_turn"}
+		return RuntimeToolDirective{ToolBlocks: []map[string]any{{"type": "text", "text": "Upstream mengembalikan respons kosong. Silakan periksa akun di menu Manajemen Akun."}}, StopReason: "end_turn"}
 	}
 	return RuntimeToolDirective{ToolBlocks: []map[string]any{{"type": "text", "text": state.AnswerText}}, StopReason: "end_turn"}
 }

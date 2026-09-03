@@ -105,7 +105,7 @@ export default function VideoPage() {
       if (!res.ok) {
         const detail = data?.detail || data?.error || `HTTP ${res.status}`
         setError(String(detail))
-        toast.error(`生成失败: ${String(detail).slice(0, 80)}`)
+        toast.error(`Gagal generate: ${String(detail).slice(0, 80)}`)
         return
       }
 
@@ -123,29 +123,36 @@ export default function VideoPage() {
         }))
 
       if (newVideos.length === 0) {
-        setError("未返回视频，请重试")
-        toast.error("未返回视频，请重试")
+        setError("Tidak ada video yang dihasilkan, silakan coba lagi")
+        toast.error("Tidak ada video yang dihasilkan, silakan coba lagi")
         return
       }
 
       setVideos(prev => [...newVideos, ...prev])
-      toast.success(`成功生成 ${newVideos.length} 个视频`)
+      toast.success(`Berhasil membuat ${newVideos.length} video`)
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "网络错误"
+      const msg = err instanceof Error ? err.message : "Kesalahan jaringan"
       setError(msg)
-      toast.error(`生成失败: ${msg}`)
+      toast.error(`Gagal generate: ${msg}`)
     } finally {
       setLoading(false)
     }
   }
 
-  const handleDownload = (url: string, idx: number) => {
-    const a = document.createElement("a")
-    a.href = url
-    a.download = `qwen_video_${Date.now()}_${idx}.mp4`
-    a.target = "_blank"
-    a.rel = "noopener noreferrer"
-    a.click()
+  const handleDownload = async (url: string, idx: number) => {
+    try {
+      const res = await fetch(url, { referrerPolicy: "no-referrer" })
+      if (!res.ok) throw new Error("direct fetch failed")
+      const blob = await res.blob()
+      const blobUrl = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = blobUrl
+      a.download = `qwen_video_${Date.now()}_${idx}.mp4`
+      a.click()
+      URL.revokeObjectURL(blobUrl)
+    } catch {
+      window.open(`${API_BASE}/api/media/proxy?url=${encodeURIComponent(url)}`, "_blank")
+    }
   }
 
   return (
@@ -153,31 +160,31 @@ export default function VideoPage() {
       <section className="admin-hero p-6">
         <div className="relative z-10">
           <div className="text-xs font-black uppercase tracking-[0.28em] text-muted-foreground">Video Lab</div>
-          <h2 className="mt-2 text-4xl font-black tracking-tight">视频生成</h2>
-          <p className="mt-2 text-muted-foreground">选择视频模型生成短视频，支持比例、时长、任务轮询和结果下载。</p>
+          <h2 className="mt-2 text-4xl font-black tracking-tight">Generate Video</h2>
+          <p className="mt-2 text-muted-foreground">Pilih model video untuk membuat video pendek, mendukung rasio, durasi, dan pengunduhan hasil.</p>
         </div>
       </section>
 
       <div className="admin-card p-6 space-y-4">
         <div className="space-y-2">
-          <label className="text-sm font-medium">视频描述 (Prompt)</label>
+          <label className="text-sm font-medium">Deskripsi Video (Prompt)</label>
           <textarea
             rows={3}
             value={prompt}
             onChange={e => setPrompt(e.target.value)}
-            placeholder="描述你想生成的视频，例如：雨夜霓虹街头，一只黑猫慢慢穿过水洼，电影感镜头"
+            placeholder="Deskripsikan video yang ingin dibuat, contoh: Jalanan kota berhujan malam hari dengan lampu neon, seekor kucing hitam berjalan pelan, sinematik"
             className="admin-input flex w-full px-3 py-2 text-sm resize-none"
             disabled={loading}
             onKeyDown={e => {
               if (e.key === "Enter" && e.ctrlKey) handleGenerate()
             }}
           />
-          <p className="text-xs text-muted-foreground">Ctrl+Enter 快速生成</p>
+          <p className="text-xs text-muted-foreground">Ctrl+Enter untuk generate cepat</p>
         </div>
 
         <div className="flex flex-wrap gap-4 items-end">
           <div className="space-y-1.5 min-w-[260px]">
-            <label className="text-sm font-medium">视频模型</label>
+            <label className="text-sm font-medium">Model Video</label>
             <select
               value={model}
               onChange={e => setModel(e.target.value)}
@@ -195,7 +202,7 @@ export default function VideoPage() {
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-sm font-medium">视频比例</label>
+            <label className="text-sm font-medium">Rasio Video</label>
             <div className="flex gap-2">
               {ASPECT_RATIOS.map(r => (
                 <button
@@ -215,7 +222,7 @@ export default function VideoPage() {
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-sm font-medium">视频时长</label>
+            <label className="text-sm font-medium">Durasi Video</label>
             <div className="flex gap-2">
               {DURATIONS.map(v => (
                 <button
@@ -235,7 +242,7 @@ export default function VideoPage() {
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-sm font-medium">生成数量</label>
+            <label className="text-sm font-medium">Jumlah Video</label>
             <div className="flex gap-2">
               {[1, 2].map(v => (
                 <button
@@ -248,7 +255,7 @@ export default function VideoPage() {
                   }`}
                   disabled={loading}
                 >
-                  {v} 个
+                  {v} Video
                 </button>
               ))}
             </div>
@@ -264,8 +271,8 @@ export default function VideoPage() {
             className="ml-auto h-10 px-6 gap-2"
           >
             {loading
-              ? <><RefreshCw className="h-4 w-4 animate-spin" /> 生成中...</>
-              : <><Wand2 className="h-4 w-4" /> 生成视频</>
+              ? <><RefreshCw className="h-4 w-4 animate-spin" /> Sedang membuat...</>
+              : <><Wand2 className="h-4 w-4" /> Generate Video</>
             }
           </Button>
         </div>
@@ -285,8 +292,8 @@ export default function VideoPage() {
               <RefreshCw className="h-6 w-6 animate-spin absolute -bottom-1 -right-1 text-primary" />
             </div>
             <div className="text-center">
-              <p className="font-medium">正在生成视频...</p>
-              <p className="text-sm text-muted-foreground/70 mt-1">视频生成耗时通常更长，请保持页面打开</p>
+              <p className="font-medium">Sedang membuat video...</p>
+              <p className="text-sm text-muted-foreground/70 mt-1">Pembuatan video memerlukan waktu lebih lama, mohon biarkan halaman tetap terbuka</p>
             </div>
           </div>
         </div>
@@ -295,9 +302,9 @@ export default function VideoPage() {
       {videos.length > 0 && !loading && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="font-semibold">生成结果 ({videos.length} 个)</h3>
+            <h3 className="font-semibold">Hasil Generate ({videos.length} video)</h3>
             <Button variant="ghost" size="sm" onClick={() => setVideos([])}>
-              清空
+              Bersihkan
             </Button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -309,13 +316,19 @@ export default function VideoPage() {
                     controls
                     className="w-full aspect-video bg-black object-contain"
                     preload="metadata"
+                    onError={e => {
+                      const target = e.currentTarget
+                      if (!target.src.includes("/api/media/proxy")) {
+                        target.src = `${API_BASE}/api/media/proxy?url=${encodeURIComponent(video.url)}`
+                      }
+                    }}
                   />
                   <div className="absolute top-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                     <Button size="sm" variant="secondary" onClick={() => handleDownload(video.url, idx)} className="gap-1.5">
-                      <Download className="h-3.5 w-3.5" /> 下载
+                      <Download className="h-3.5 w-3.5" /> Unduh
                     </Button>
-                    <Button size="sm" variant="secondary" onClick={() => window.open(video.url, "_blank")}>
-                      打开
+                    <Button size="sm" variant="secondary" onClick={() => window.open(`${API_BASE}/api/media/proxy?url=${encodeURIComponent(video.url)}`, "_blank")}>
+                      Buka
                     </Button>
                   </div>
                 </div>
@@ -323,7 +336,7 @@ export default function VideoPage() {
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <span className="admin-chip font-mono">{video.ratio}</span>
                     <span className="admin-chip font-mono">{video.duration || duration}s</span>
-                    <span className="admin-chip font-mono">请求 {video.size}</span>
+                    <span className="admin-chip font-mono">Minta {video.size}</span>
                     {video.model && <span className="admin-chip font-mono">{video.model}</span>}
                     <span className="truncate">{video.revised_prompt.slice(0, 80)}</span>
                   </div>
@@ -340,8 +353,8 @@ export default function VideoPage() {
           <div className="flex flex-col items-center gap-4 text-muted-foreground">
             <VideoIcon className="h-16 w-16 text-muted-foreground/20" />
             <div className="text-center">
-              <p className="font-medium">还没有生成视频</p>
-              <p className="text-sm text-muted-foreground/70 mt-1">在上方输入描述，点击「生成视频」开始创作</p>
+              <p className="font-medium">Belum ada video yang dibuat</p>
+              <p className="text-sm text-muted-foreground/70 mt-1">Masukkan deskripsi di atas dan klik 'Generate Video' untuk memulai kreasi</p>
             </div>
           </div>
         </div>

@@ -1,296 +1,202 @@
-[English](README.md) | [简体中文](README_CN.md)
-
-<div align="center">
-  <a href="https://github.com/YuJunZhiXue/qwen2API">
-    <img src="https://img.shields.io/badge/Qwen-2API-1677ff?style=for-the-badge&logo=alibabacloud&logoColor=white" alt="qwen2API" height="80">
-  </a>
-
-  <h1>qwen2API</h1>
-
-  <p>
-    Self-hosted Qwen Web protocol gateway with OpenAI, Anthropic, and Gemini compatible APIs.
-  </p>
-
-  <p>
-    <a href="https://github.com/YuJunZhiXue/qwen2API">GitHub</a> ·
-    <a href="https://hub.docker.com/r/yujunzhixue/qwen2api">Docker Hub</a> ·
-    <a href="https://t.me/qwen2api">Telegram</a> ·
-    <a href="./README_CN.md">中文说明</a>
-  </p>
-
-  <p>
-    <a href="https://github.com/YuJunZhiXue/qwen2API/releases">
-      <img src="https://img.shields.io/github/v/release/YuJunZhiXue/qwen2API?logo=github&label=Version&style=flat-square" alt="Release">
-    </a>
-    <a href="https://github.com/YuJunZhiXue/qwen2API/stargazers">
-      <img src="https://img.shields.io/github/stars/YuJunZhiXue/qwen2API?logo=github&style=flat-square&label=Stars" alt="Stars">
-    </a>
-    <a href="https://hub.docker.com/r/yujunzhixue/qwen2api">
-      <img src="https://img.shields.io/badge/Docker%20Hub-yujunzhixue%2Fqwen2api-2496ED?logo=docker&style=flat-square" alt="Docker Hub">
-    </a>
-    <img src="https://img.shields.io/badge/Backend-Go%201.26-00ADD8?logo=go&style=flat-square" alt="Go">
-    <img src="https://img.shields.io/badge/WebUI-React%2019-61DAFB?logo=react&style=flat-square" alt="React">
-    <img src="https://img.shields.io/badge/License-GPL--3.0-blue?style=flat-square" alt="License">
-  </p>
-</div>
-
-## 一、项目简介 / Project Overview
-
-qwen2API converts Qwen Web capabilities into common API protocols and provides a local WebUI for account management, downstream API keys, runtime settings, model tests, image tests, and video tests.
-
-> [!NOTE]
-> `v1.0` was the legacy Python + FastAPI implementation. `v2.0` is the current Go backend + React WebUI mainline and is the recommended version for Docker and local deployments.
-
-### 1. Feature Map
-
-| Area | Capability |
-| --- | --- |
-| OpenAI-compatible APIs | `/v1/chat/completions`, `/v1/responses`, `/v1/models`, `/v1/files`, `/v1/images/generations`, `/v1/videos/generations` |
-| Anthropic-compatible APIs | `/v1/messages`, `/anthropic/v1/messages`, `/v1/messages/count_tokens` |
-| Gemini-compatible APIs | `/v1beta/models/{model}:generateContent`, `/v1beta/models/{model}:streamGenerateContent` |
-| WebUI | Accounts, API keys, runtime config, chat test, image test, video test |
-| Account pool | Multi-account rotation, per-account concurrency, separate chat/image/video cooldown tracking |
-| Operations | `/healthz`, `/readyz`, `/keepalive`, Docker healthcheck, multi-arch image publishing |
-
-### 2. Version Line
-
-| Version | Stack | Status |
-| --- | --- | --- |
-| `v1.0` | Python + FastAPI/Uvicorn | Legacy version, kept only as historical context |
-| `v2.0` | Go backend + React WebUI | Current mainline |
-
-## 二、快速部署 / Quick Deployment
-
-### 1. Pull From Docker Hub
-
-For most deployments, use the Docker Hub image directly. Keep `data` and `logs` beside your compose file; Docker will mount them into the container so upgrades do not wipe your accounts, keys, or logs.
-
-```bash
-mkdir qwen2api
-cd qwen2api
-mkdir -p data logs
-```
-
-Create a small `.env`:
-
-```env
-HOST_PORT=7860
-HOST_DATA_DIR=./data
-HOST_LOGS_DIR=./logs
-ADMIN_KEY=replace-with-your-own-strong-random-key
-```
-
-Create `docker-compose.yml`:
-
-```yaml
-services:
-  qwen2api:
-    image: ${QWEN2API_IMAGE:-yujunzhixue/qwen2api:latest}
-    container_name: qwen2api
-    restart: unless-stopped
-    init: true
-    env_file:
-      - .env
-    ports:
-      - "${HOST_PORT:-7860}:${PORT:-7860}"
-    volumes:
-      - ${HOST_DATA_DIR:-./data}:/app/data
-      - ${HOST_LOGS_DIR:-./logs}:/app/logs
-    shm_size: "512m"
-    healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:${PORT:-7860}/healthz || exit 1"]
-      interval: 30s
-      timeout: 10s
-      start_period: 120s
-      retries: 3
-```
-
-You do not need to set paths for `accounts.json`, `api_keys.json`, or other internal files. The image already uses `/app/data` and `/app/logs`; the volume mapping above decides where those files live on your host.
-
-Start it:
-
-```bash
-docker compose pull
-docker compose up -d
-docker compose logs -f qwen2api
-```
-
-Open:
-
-- WebUI: `http://127.0.0.1:7860`
-- Health check: `http://127.0.0.1:7860/healthz`
-- Keepalive probe: `http://127.0.0.1:7860/keepalive`
-
-### 2. Build Locally With Docker
-
-Use this path when you changed the source code and need to build your own image.
-
-```bash
-git clone https://github.com/YuJunZhiXue/qwen2API.git
-cd qwen2API
-cp .env.example .env
-docker compose -f docker-compose.yml -f docker-compose.build.yml build
-docker compose -f docker-compose.yml -f docker-compose.build.yml up -d
-```
-
-## 三、架构与配置 / Architecture and Configuration
-
-### 1. Runtime Architecture
-
-```mermaid
-flowchart LR
-  subgraph Clients["API Clients"]
-    OpenAI["OpenAI SDK / Chat Completions"]
-    Anthropic["Claude / Anthropic Messages"]
-    Gemini["Gemini-compatible clients"]
-    CLI["Claude Code / Codex / other CLI tools"]
-  end
-
-  subgraph App["qwen2API v2.0"]
-    WebUI["React WebUI"]
-    Router["Go HTTP Router"]
-    Adapter["Protocol Adapters"]
-    Tools["Tool-call / Context Pipeline"]
-    Pool["Qwen Account Pool"]
-    Store["JSON Stores / Data Files"]
-  end
-
-  subgraph Runtime["Runtime"]
-    Docker["Docker image"]
-    Data["./data volume"]
-    Logs["./logs volume"]
-  end
-
-  Qwen["Qwen Web Upstream"]
-
-  OpenAI --> Router
-  Anthropic --> Router
-  Gemini --> Router
-  CLI --> Router
-  WebUI --> Router
-  Router --> Adapter
-  Adapter --> Tools
-  Tools --> Pool
-  Pool --> Qwen
-  Pool --> Store
-  Store --> Data
-  Router --> Logs
-  Docker --> App
-```
-
-### 2. Environment Variables
-
-Do not commit real secrets. `.env.example` intentionally contains empty values and commented examples only.
-
-| Variable | Description |
-| --- | --- |
-| `ADMIN_KEY` | WebUI and `/api/admin/*` management key. Set a strong private value. |
-| `QWEN_API_KEY`, `QWEN_API_KEYS`, `QWEN_API_KEY_N` | Runtime-only downstream API keys injected from env. They are not saved to `data/api_keys.json` and cannot be deleted from WebUI. |
-| `QWEN_ACCOUNT_N` | Runtime-only upstream Qwen account, format `token;optional-email;optional-password`. It is not saved to `data/accounts.json`. |
-| `KEEPALIVE_URL`, `KEEPALIVE_INTERVAL` | Optional background keepalive task. Env values lock the same WebUI settings. |
-| `TOOL_RECOVERY_MAX_ATTEMPTS` | Maximum automatic recovery attempts when an upstream response after a tool result fails to produce the next client tool call. Default `4`, clamped to `1`-`8`. |
-| `HOST_DATA_DIR`, `HOST_LOGS_DIR` | Host paths mounted into Docker as `/app/data` and `/app/logs`. Defaults are `./data` and `./logs`. |
-| `DATA_DIR`, `LOGS_DIR` | Local non-Docker path overrides. Leave empty to use the current project directory. |
-
-## 四、开发指南 / Development Guide
-
-### 1. Requirements
-
-- Go `1.26`
-- Node.js `20+`
-- npm
-- Docker, only if you need container builds
-
-### 2. One-Command Local Startup
-
-```powershell
-go run start-all.go
-```
-
-### 3. Backend Development
-
-```powershell
-cd backend
-go run .
-```
-
-Verification:
-
-```powershell
-cd backend
-go test ./...
-go build -trimpath -ldflags="-s -w" -o ..\bin\qwen2api-backend.exe .
-```
-
-### 4. Frontend Development
-
-```powershell
-cd frontend
-npm ci
-npm run dev
-```
-
-Production build:
-
-```powershell
-cd frontend
-npm run build
-```
-
-### 5. Development Rules
-
-- Keep the Go backend as the `v2.0` runtime source of truth.
-- Keep Docker data paths container-internal as `/app/data` and `/app/logs`.
-- Control host paths through compose volume mappings instead of hard-coded workspace paths.
-- Do not commit `data/`, `logs/`, `.env`, real tokens, cookies, passwords, or downstream API keys.
-- Update README and `.env.example` when adding user-visible configuration.
-
-## 五、参与贡献 / Contribution
-
-### 1. How to Contribute
-
-- Report bugs through [GitHub Issues](https://github.com/YuJunZhiXue/qwen2API/issues).
-- Submit feature requests through [GitHub Issues](https://github.com/YuJunZhiXue/qwen2API/issues).
-- Open focused pull requests through [GitHub Pull Requests](https://github.com/YuJunZhiXue/qwen2API/pulls).
-- Include practical verification steps when possible.
-
-### 2. Pull Request Checklist
-
-- `go test ./...` passes in `backend`.
-- `npm run build` passes in `frontend`.
-- Docker-related changes are reflected in `Dockerfile`, `docker-compose.yml`, and README when needed.
-- No generated data, logs, local `.env`, Qwen token, cookie, password, or downstream API key is included.
-
-### 3. Contributors
-
-Thanks to everyone who helps improve qwen2API.
-
-[![Contributors](https://contrib.rocks/image?repo=YuJunZhiXue/qwen2API)](https://github.com/YuJunZhiXue/qwen2API/graphs/contributors)
-
-## 六、其他信息 / Other Information
-
-### 1. Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=YuJunZhiXue/qwen2API&type=Timeline)](https://www.star-history.com/#YuJunZhiXue/qwen2API&Timeline)
-
-### 2. License
-
-This project is released under the [GPL-3.0 License](./LICENSE).
-
-### 3. Disclaimer
-
-- This project is provided as an open-source self-hosted gateway.
-- Review your local laws, platform rules, and upstream account policies before deployment.
-- Do not publish or share real account tokens, cookies, passwords, or downstream API keys.
-- If you find a security issue, please avoid public secret disclosure and report it through a private channel first.
-
-### 4. Acknowledgements
-
-- 特别鸣谢: [LinuxDo](https://linux.do/)
+# 🚀 qwen2API - Self-Hosted Qwen API Gateway
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Go-1.24+-00ADD8.svg?style=for-the-badge&logo=go&logoColor=white" alt="Go 1.24+" />
+  <img src="https://img.shields.io/badge/React-19-61DAFB.svg?style=for-the-badge&logo=react&logoColor=black" alt="React 19" />
+  <img src="https://img.shields.io/badge/API-OpenAI%20%7C%20Anthropic%20%7C%20Gemini-green.svg?style=for-the-badge" alt="Multi-Protocol API" />
+  <img src="https://img.shields.io/badge/WAF-Bypass%20Android%20APK-orange.svg?style=for-the-badge" alt="WAF Bypass" />
+  <img src="https://img.shields.io/badge/Platform-Termux%20%7C%20Linux%20VPS-blue.svg?style=for-the-badge" alt="Termux & Linux" />
+  <img src="https://img.shields.io/badge/License-GPL--3.0-blue.svg?style=for-the-badge" alt="License GPL-3.0" />
+</p>
+
+Gateway AI mandiri berkinerja tinggi (*High-Performance Self-Hosted Gateway*) yang mengonversi kemampuan resmi **Qwen AI** menjadi API standar yang kompatibel penuh dengan **OpenAI**, **Anthropic**, dan **Google Gemini**.
+
+Dilengkapi sistem **Bypass Alibaba Cloud WAF (RGV587_ERROR)** berbasis protokol Android APK resmi, dukungan **Tool Calling / Function Calling** untuk AI Coding Agent, serta WebUI modern berbahasa Indonesia yang ringan dan siap jalan di **Android Termux** maupun **Server VPS Linux**.
 
 ---
 
-<div align="center">
-  <p>If qwen2API helps you, consider giving the project a Star.</p>
-  <p>Made by <a href="https://github.com/YuJunZhiXue">YuJunZhiXue</a> and contributors.</p>
-</div>
+## 🌟 Fitur Utama
+
+- 🛡️ **Bypass Alibaba Cloud WAF (Anti RGV587_ERROR)**: Mengintegrasikan protokol resmi Android APK (`ai.qwenlm.chat.android`), signature token `app_waf`, dan ID perangkat unik dinamis. Permintaan terbebas dari blokir tantangan JavaScript slider captcha.
+- 🔑 **Login Otomatis Email & Sandi**: Login langsung ke server Qwen (`/api/v2/auths/signin`) dengan enkripsi kata sandi SHA-256. Tidak perlu repot membuka DevTools / F12 untuk menyalin token sesi secara manual (opsi token manual tetap tersedia untuk login Google OAuth).
+- 🛠️ **AI Agent & Tool Calling Support (100% Works)**: Kompatibel penuh dengan spesifikasi Function Calling OpenAI (`tools` & `tool_calls`) dan Anthropic (`tool_use`). Teruji sukses untuk autonomous agent seperti **Cline**, **Roo Code**, **Claude Code**, **Cursor**, dan **LangChain**.
+- 🖼️ **Image & Video Lab (WanX Media)**: Mendukung pembuatan gambar AI (`/v1/images/generations`) dan video AI (`/v1/videos/generations`) dengan built-in **Media Proxy** dan kebijakan `no-referrer`, mencegah galat `403 denied by Referer ACL` dari CDN Alibaba Cloud.
+- 🔄 **Account Pool & Rotasi Otomatis**: Manajemen multi-akun dengan auto-failover, pelacakan rate limit terpisah (chat, image, video), dan sistem sesi pra-hangat (*pre-warm pool*) untuk respons instan.
+- 🎨 **WebUI Dashboard Modern**: Dashboard berbasis React 19 + Tailwind CSS + Lucide Icons yang bersih, responsif, dan 100% berbahasa Indonesia untuk mengelola akun, API key, konfigurasi runtime, dan uji coba interaktif.
+- 📱 **Termux & VPS Native**: Backend ditulis murni dalam bahasa **Go** dengan penggunaan RAM sangat minim (< 50MB) tanpa ketergantungan browser headless berat (Playwright/Chromium) untuk operasional API harian.
+
+---
+
+## 🏗️ Arsitektur & Alur Kerja
+
+```
+[AI Client / Agent (Cline, Roo Code, Chatbox, SDK)]
+                       │
+                       ▼  (OpenAI / Anthropic / Gemini Format)
+             [qwen2API Gateway :7860]
+  ├── 1. Autentikasi API Key Klien & Rate Limiter
+  ├── 2. Pool Manager: Pilih Akun Sehat (Round-Robin)
+  ├── 3. Injeksi Skema Tool Calling & System Prompt
+  └── 4. Format Protokol Android APK Resmi:
+         ├── User-Agent: Dalvik/2.1.0 ... AliApp(QWENCHAT/2.5.1)
+         ├── X-Platform: android | source: app
+         ├── Header Keamanan: app_waf + x-device-id
+         └── Cookie Jar Sesi Otomatis (acw_tc, dll.)
+                       │
+                       ▼  (Direct HTTPS Request - Bebas WAF Slider)
+           [Alibaba Cloud Qwen Upstream Server]
+                       │
+                       ▼  (Server-Sent Events / SSE Stream)
+             [qwen2API Gateway :7860]
+  ├── 1. Parser Tool Calling & Ekstraksi Argumen JSON
+  ├── 2. Streaming Token Respon ke Klien
+  └── 3. Sanitasi Media CDN via Internal Media Proxy
+                       │
+                       ▼
+[AI Client / Agent Menerima Respons / Eksekusi Tool Sempurna! 🎉]
+```
+
+---
+
+## ⚡ Panduan Instalasi Cepat
+
+### 1. Instalasi di HP Android (Termux)
+
+```bash
+# Update paket Termux dan instal dependensi
+pkg update -y && pkg install git golang nodejs-lts -y
+
+# Clone repositori
+git clone https://github.com/Cxslin/qwen2API.git
+cd qwen2API
+
+# Jalankan build backend dan frontend otomatis
+cd frontend && npm install && npm run build && cd ..
+cd backend && go build -trimpath -ldflags="-s -w" -o ../bin/qwen2api-backend . && cd ..
+
+# Berikan izin eksekusi pada skrip manajemen
+chmod +x start.sh stop.sh
+```
+
+### 2. Jalankan Layanan
+
+```bash
+# Menjalankan di background (Daemon)
+./start.sh -d
+
+# Memeriksa status log
+tail -f logs/output.log
+
+# Menghentikan layanan
+./stop.sh
+```
+
+Akses Web Dashboard melalui browser di: **`http://localhost:7860`** (atau `http://IP_HP_ANDA:7860`).
+
+---
+
+## 🔑 Konfigurasi & Login Akun
+
+1. Buka WebUI di browser: `http://localhost:7860`.
+2. Masukkan Admin Key default: `admin123456` (dapat diubah di menu **Pengaturan Sistem**).
+3. Buka tab **Manajemen Akun**:
+   - **Metode 1 (Rekomendasi)**: Masukkan **Email** dan **Kata Sandi** akun Qwen Anda, lalu klik **Simpan / Login Akun**. Sistem akan login otomatis via API resmi.
+   - **Metode 2 (Google OAuth)**: Jika mendaftar via Google Sign-In, salin `token` dari Local Storage browser dan tempel di kolom token manual.
+4. Buka tab **API Key** untuk membuat key akses baru yang akan digunakan di aplikasi AI Agent Anda.
+
+---
+
+## 🌐 Endpoint API Utama
+
+Semua endpoint kompatibel dengan format standar OpenAI, Anthropic, dan Google Gemini:
+
+| Protocol | Method | Endpoint | Deskripsi | Auth |
+|---|---|---|---|---|
+| **OpenAI** | `POST` | `/v1/chat/completions` | Chat Completions (Stream & Non-Stream, Tool Calling) | `Bearer <KEY>` |
+| **OpenAI** | `GET` | `/v1/models` | Daftar semua model yang tersedia | `Bearer <KEY>` |
+| **OpenAI** | `GET` | `/v1/models/{model}` | Detail kapabilitas model spesifik | `Bearer <KEY>` |
+| **OpenAI** | `POST` | `/v1/images/generations` | Pembuatan Gambar AI (WanX 2.1) | `Bearer <KEY>` |
+| **OpenAI** | `POST` | `/v1/videos/generations` | Pembuatan Video AI (WanX 2.1) | `Bearer <KEY>` |
+| **Anthropic** | `POST` | `/v1/messages` | Format Pesan Anthropic Claude (`tool_use`) | `x-api-key` |
+| **Gemini** | `POST` | `/v1beta/models/{model}:generateContent` | Format Google Gemini API | `x-goog-api-key` |
+| **Media** | `GET` | `/api/media/proxy?url={url}` | Media Proxy Internal (Anti-403 Referer ACL) | Bebas |
+| **Sistem** | `GET` | `/healthz` & `/readyz` | Healthcheck gateway & pool akun | Bebas |
+
+---
+
+## 🤖 Integrasi AI Agent & Tools
+
+### 1. Integrasi dengan Cline / Roo Code (VS Code Extension)
+- **API Provider**: `OpenAI Compatible`
+- **Base URL**: `http://127.0.0.1:7860/v1`
+- **API Key**: API Key dari menu **API Key** di WebUI (misal: `sk-...` atau `admin123456`)
+- **Model ID**: `qwen3.6-plus` atau `qwen3.7-plus`
+
+### 2. Contoh Penggunaan via Python (OpenAI SDK)
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://127.0.0.1:7860/v1",
+    api_key="admin123456"
+)
+
+# 1. Chat Biasa
+response = client.chat.completions.create(
+    model="qwen3.6-plus",
+    messages=[{"role": "user", "content": "Halo! Jelaskan komputasi kuantum secara singkat."}]
+)
+print(response.choices[0].message.content)
+
+# 2. Pemanggilan Tool (Function Calling)
+tools = [{
+    "type": "function",
+    "function": {
+        "name": "get_weather",
+        "description": "Cek cuaca terkini",
+        "parameters": {
+            "type": "object",
+            "properties": {"location": {"type": "string"}},
+            "required": ["location"]
+        }
+    }
+}]
+
+tool_response = client.chat.completions.create(
+    model="qwen3.6-plus",
+    messages=[{"role": "user", "content": "Berapa suhu di Jakarta sekarang?"}],
+    tools=tools
+)
+print("Tool Calls:", tool_response.choices[0].message.tool_calls)
+```
+
+### 3. Contoh cURL Chat Completions
+
+```bash
+curl -X POST http://127.0.0.1:7860/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer admin123456" \
+  -d '{
+    "model": "qwen3.6-plus",
+    "messages": [{"role": "user", "content": "Ceritakan lelucon lucu!"}],
+    "stream": false
+  }'
+```
+
+---
+
+## ⚙️ Variabel Lingkungan (.env)
+
+| Variabel | Default | Deskripsi |
+|---|---|---|
+| `PORT` | `7860` | Port listen server gateway |
+| `ADMIN_KEY` | `admin123456` | Kunci master otorisasi WebUI & API |
+| `MAX_RETRIES` | `3` | Jumlah percobaan ulang saat kegagalan upstream |
+| `CHAT_ID_POOL_TARGET` | `5` | Jumlah sesi chat pra-hangat per akun |
+| `UPSTREAM_STREAM_IDLE_TIMEOUT_SECONDS` | `180` | Batas waktu idle streaming (detik) |
+
+---
+
+## 📄 Lisensi
+Proyek ini didistribusikan di bawah lisensi **GNU General Public License v3.0 (GPL-3.0)**. Bebas digunakan, dipelajari, dan dikembangkan untuk kebutuhan personal maupun riset mandiri.

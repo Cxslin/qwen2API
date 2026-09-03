@@ -48,6 +48,18 @@ func FormatUpstreamError(obj map[string]any) string {
 	if obj == nil {
 		return ""
 	}
+	if ret, ok := obj["ret"].([]any); ok {
+		for _, item := range ret {
+			if s, ok := item.(string); ok && (strings.Contains(s, "RGV587_ERROR") || strings.Contains(s, "FAIL_SYS_USER_VALIDATE")) {
+				return "Alibaba Cloud WAF Captcha / Anti-Bot (RGV587_ERROR): Sesi atau IP terhalang verifikasi keamanan upstream. Silakan buka chat.qwen.ai di browser Anda, selesaikan slider verifikasi captcha, lalu perbarui token akun."
+			}
+		}
+	}
+	if data, ok := obj["data"].(map[string]any); ok {
+		if url, ok := data["url"].(string); ok && strings.Contains(url, "punish") {
+			return "Alibaba Cloud WAF Captcha / Anti-Bot (punish challenge): Terdeteksi verifikasi keamanan upstream. Silakan buka chat.qwen.ai di browser Anda, selesaikan verifikasi captcha, lalu perbarui token."
+		}
+	}
 	requestID := firstString(obj["request_id"], obj["response_id"])
 	if requestID == "" {
 		requestID = "-"
@@ -76,6 +88,9 @@ func FormatUpstreamError(obj map[string]any) string {
 }
 
 func ExtractUpstreamError(text string) string {
+	if strings.Contains(text, "RGV587_ERROR") || strings.Contains(text, "FAIL_SYS_USER_VALIDATE") || strings.Contains(text, "_____tmd_____/punish") {
+		return "Alibaba Cloud WAF Captcha / Anti-Bot (RGV587_ERROR): Sesi atau IP terhalang verifikasi keamanan. Silakan buka chat.qwen.ai di browser Anda, kirim pesan untuk menyelesaikan slider captcha, lalu perbarui token akun."
+	}
 	for _, rawLine := range strings.Split(text, "\n") {
 		line := strings.TrimSpace(rawLine)
 		if line == "" {

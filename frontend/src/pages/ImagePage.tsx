@@ -101,7 +101,7 @@ export default function ImagePage() {
       if (!res.ok) {
         const detail = data?.detail || data?.error || `HTTP ${res.status}`
         setError(String(detail))
-        toast.error(`生成失败: ${String(detail).slice(0, 80)}`)
+        toast.error(`Gagal generate: ${String(detail).slice(0, 80)}`)
         return
       }
 
@@ -118,29 +118,36 @@ export default function ImagePage() {
         }))
 
       if (newImages.length === 0) {
-        setError("未返回图片，请重试")
-        toast.error("未返回图片，请重试")
+        setError("Tidak ada gambar yang dihasilkan, silakan coba lagi")
+        toast.error("Tidak ada gambar yang dihasilkan, silakan coba lagi")
         return
       }
 
       setImages(prev => [...newImages, ...prev])
-      toast.success(`成功生成 ${newImages.length} 张图片`)
+      toast.success(`Berhasil membuat ${newImages.length} gambar`)
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "网络错误"
+      const msg = err instanceof Error ? err.message : "Kesalahan jaringan"
       setError(msg)
-      toast.error(`生成失败: ${msg}`)
+      toast.error(`Gagal generate: ${msg}`)
     } finally {
       setLoading(false)
     }
   }
 
-  const handleDownload = (url: string, idx: number) => {
-    const a = document.createElement("a")
-    a.href = url
-    a.download = `qwen_image_${Date.now()}_${idx}.png`
-    a.target = "_blank"
-    a.rel = "noopener noreferrer"
-    a.click()
+  const handleDownload = async (url: string, idx: number) => {
+    try {
+      const res = await fetch(url, { referrerPolicy: "no-referrer" })
+      if (!res.ok) throw new Error("direct fetch failed")
+      const blob = await res.blob()
+      const blobUrl = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = blobUrl
+      a.download = `qwen_image_${Date.now()}_${idx}.png`
+      a.click()
+      URL.revokeObjectURL(blobUrl)
+    } catch {
+      window.open(`${API_BASE}/api/media/proxy?url=${encodeURIComponent(url)}`, "_blank")
+    }
   }
 
   const handleImageLoad = (url: string, image: HTMLImageElement) => {
@@ -152,7 +159,7 @@ export default function ImagePage() {
   }
 
   const formatActualSize = (img: GeneratedImage) => {
-    if (!img.naturalWidth || !img.naturalHeight) return "实际尺寸检测中"
+    if (!img.naturalWidth || !img.naturalHeight) return "Mendeteksi dimensi..."
     return `${img.naturalWidth}x${img.naturalHeight}`
   }
 
@@ -161,7 +168,7 @@ export default function ImagePage() {
     const expected = img.width / img.height
     const actual = img.naturalWidth / img.naturalHeight
     const diff = Math.abs(expected - actual) / expected
-    return diff <= 0.03 ? "比例匹配" : `实际比例 ${(actual).toFixed(2)}，与请求 ${img.ratio} 不一致`
+    return diff <= 0.03 ? "Rasio Sesuai" : `Rasio aktual ${(actual).toFixed(2)}, berbeda dari permintaan ${img.ratio}`
   }
 
   return (
@@ -169,32 +176,32 @@ export default function ImagePage() {
       <section className="admin-hero p-6">
         <div className="relative z-10">
           <div className="text-xs font-black uppercase tracking-[0.28em] text-muted-foreground">Image Lab</div>
-          <h2 className="mt-2 text-4xl font-black tracking-tight">图片生成</h2>
-          <p className="mt-2 text-muted-foreground">选择图片模型生成 AI 图片，支持比例、尺寸检测和批量结果管理。</p>
+          <h2 className="mt-2 text-4xl font-black tracking-tight">Generate Gambar</h2>
+          <p className="mt-2 text-muted-foreground">Pilih model gambar untuk membuat gambar AI, mendukung berbagai aspek rasio dan resolusi.</p>
         </div>
       </section>
 
-      {/* 输入区域 */}
+      {/* Input area */}
       <div className="admin-card p-6 space-y-4">
         <div className="space-y-2">
-          <label className="text-sm font-medium">图片描述 (Prompt)</label>
+          <label className="text-sm font-medium">Deskripsi Gambar (Prompt)</label>
           <textarea
             rows={3}
             value={prompt}
             onChange={e => setPrompt(e.target.value)}
-            placeholder="描述你想生成的图片，例如：赛博朋克风格的猫咪，霓虹灯背景，超写实风格"
+            placeholder="Deskripsikan gambar yang ingin dibuat, contoh: Seekor kucing cyberpunk dengan lampu neon, gaya fotorealistik"
             className="admin-input flex w-full px-3 py-2 text-sm resize-none"
             disabled={loading}
             onKeyDown={e => {
               if (e.key === "Enter" && e.ctrlKey) handleGenerate()
             }}
           />
-          <p className="text-xs text-muted-foreground">Ctrl+Enter 快速生成</p>
+          <p className="text-xs text-muted-foreground">Ctrl+Enter untuk generate cepat</p>
         </div>
 
         <div className="flex flex-wrap gap-4 items-end">
           <div className="space-y-1.5 min-w-[260px]">
-            <label className="text-sm font-medium">图片模型</label>
+            <label className="text-sm font-medium">Model Gambar</label>
             <select
               value={model}
               onChange={e => setModel(e.target.value)}
@@ -211,9 +218,9 @@ export default function ImagePage() {
             </select>
           </div>
 
-          {/* 比例选择 */}
+          {/* Rasio */}
           <div className="space-y-1.5">
-            <label className="text-sm font-medium">图片比例</label>
+            <label className="text-sm font-medium">Rasio Gambar</label>
             <div className="flex gap-2">
               {ASPECT_RATIOS.map(r => (
                 <button
@@ -232,9 +239,9 @@ export default function ImagePage() {
             </div>
           </div>
 
-          {/* 数量选择 */}
+          {/* Jumlah */}
           <div className="space-y-1.5">
-            <label className="text-sm font-medium">生成数量</label>
+            <label className="text-sm font-medium">Jumlah Gambar</label>
             <div className="flex gap-2">
               {[1, 2, 4].map(v => (
                 <button
@@ -247,31 +254,31 @@ export default function ImagePage() {
                   }`}
                   disabled={loading}
                 >
-                  {v} 张
+                  {v} Gambar
                 </button>
               ))}
             </div>
           </div>
 
-          {/* 尺寸预览 */}
+          {/* Ukuran */}
           <div className="admin-chip font-mono">
             {sizeStr}
           </div>
 
-          {/* 生成按钮 */}
+          {/* Tombol Generate */}
           <Button
             onClick={handleGenerate}
             disabled={loading || !prompt.trim()}
             className="ml-auto h-10 px-6 gap-2"
           >
             {loading
-              ? <><RefreshCw className="h-4 w-4 animate-spin" /> 生成中...</>
-              : <><Wand2 className="h-4 w-4" /> 生成图片</>
+              ? <><RefreshCw className="h-4 w-4 animate-spin" /> Sedang membuat...</>
+              : <><Wand2 className="h-4 w-4" /> Generate Gambar</>
             }
           </Button>
         </div>
 
-        {/* 错误提示 */}
+        {/* Error */}
         {error && (
           <div className="rounded-md bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 text-sm">
             {error}
@@ -279,7 +286,7 @@ export default function ImagePage() {
         )}
       </div>
 
-      {/* 加载状态占位 */}
+      {/* Loading */}
       {loading && (
         <div className="admin-card p-8">
           <div className="flex flex-col items-center justify-center gap-4 text-muted-foreground">
@@ -288,20 +295,20 @@ export default function ImagePage() {
               <RefreshCw className="h-6 w-6 animate-spin absolute -bottom-1 -right-1 text-primary" />
             </div>
             <div className="text-center">
-              <p className="font-medium">正在生成图片...</p>
-              <p className="text-sm text-muted-foreground/70 mt-1">图片生成通常需要 10-30 秒，请耐心等待</p>
+              <p className="font-medium">Sedang membuat gambar...</p>
+              <p className="text-sm text-muted-foreground/70 mt-1">Proses ini biasanya memerlukan 10-30 detik, mohon menunggu</p>
             </div>
           </div>
         </div>
       )}
 
-      {/* 图片展示区 */}
+      {/* Daftar Gambar */}
       {images.length > 0 && !loading && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="font-semibold">生成结果 ({images.length} 张)</h3>
+            <h3 className="font-semibold">Hasil Generate ({images.length} gambar)</h3>
             <Button variant="ghost" size="sm" onClick={() => setImages([])}>
-              清空
+              Bersihkan
             </Button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -311,19 +318,23 @@ export default function ImagePage() {
                   <img
                     src={img.url}
                     alt={img.revised_prompt}
+                    referrerPolicy="no-referrer"
                     className="w-full h-auto object-contain"
                     loading="lazy"
                     onLoad={e => handleImageLoad(img.url, e.currentTarget)}
                     onError={e => {
                       const target = e.currentTarget
+                      if (!target.src.includes("/api/media/proxy")) {
+                        target.src = `${API_BASE}/api/media/proxy?url=${encodeURIComponent(img.url)}`
+                        return
+                      }
                       target.style.display = "none"
                       target.nextElementSibling?.classList.remove("hidden")
                     }}
                   />
                   <div className="hidden items-center justify-center p-8 text-muted-foreground text-sm">
-                    <ImageIcon className="h-8 w-8 mr-2" /> 图片加载失败
+                    <ImageIcon className="h-8 w-8 mr-2" /> Gagal memuat gambar
                   </div>
-                  {/* 悬浮操作栏 */}
                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
                     <Button
                       size="sm"
@@ -331,27 +342,27 @@ export default function ImagePage() {
                       onClick={() => handleDownload(img.url, idx)}
                       className="gap-1.5"
                     >
-                      <Download className="h-3.5 w-3.5" /> 下载
+                      <Download className="h-3.5 w-3.5" /> Unduh
                     </Button>
                     <Button
                       size="sm"
                       variant="secondary"
-                      onClick={() => window.open(img.url, "_blank")}
+                      onClick={() => window.open(`${API_BASE}/api/media/proxy?url=${encodeURIComponent(img.url)}`, "_blank")}
                     >
-                      在新窗口打开
+                      Buka di Tab Baru
                     </Button>
                   </div>
                 </div>
                 <div className="p-3 space-y-1">
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <span className="admin-chip font-mono">{img.ratio}</span>
-                    <span className="admin-chip font-mono">请求 {img.size}</span>
+                    <span className="admin-chip font-mono">Minta {img.size}</span>
                     {img.model && <span className="admin-chip font-mono">{img.model}</span>}
-                    <span className="admin-chip font-mono">实际 {formatActualSize(img)}</span>
+                    <span className="admin-chip font-mono">Aktual {formatActualSize(img)}</span>
                     <span className="truncate">{img.revised_prompt.slice(0, 80)}</span>
                   </div>
                   {getRatioStatus(img) && (
-                    <div className={`text-xs ${getRatioStatus(img) === "比例匹配" ? "text-emerald-500" : "text-amber-500"}`}>
+                    <div className={`text-xs ${getRatioStatus(img) === "Rasio Sesuai" ? "text-emerald-500" : "text-amber-500"}`}>
                       {getRatioStatus(img)}
                     </div>
                   )}
@@ -363,14 +374,14 @@ export default function ImagePage() {
         </div>
       )}
 
-      {/* 空状态 */}
+      {/* Empty State */}
       {images.length === 0 && !loading && (
         <div className="admin-card p-12">
           <div className="flex flex-col items-center gap-4 text-muted-foreground">
             <ImageIcon className="h-16 w-16 text-muted-foreground/20" />
             <div className="text-center">
-              <p className="font-medium">还没有生成图片</p>
-              <p className="text-sm text-muted-foreground/70 mt-1">在上方输入描述，点击「生成图片」开始创作</p>
+              <p className="font-medium">Belum ada gambar yang dibuat</p>
+              <p className="text-sm text-muted-foreground/70 mt-1">Ketik deskripsi di atas dan klik 'Generate Gambar' untuk memulai kreasi</p>
             </div>
           </div>
         </div>

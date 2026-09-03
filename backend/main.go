@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	cryptorand "crypto/rand"
+	"crypto/md5"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -22,6 +23,7 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"os"
 	"os/signal"
@@ -2361,7 +2363,7 @@ func (app *App) updateKeepAliveSettings(body map[string]any) error {
 	if _, ok := body["keepalive_interval"]; ok && !locked["keepalive_interval"] {
 		interval := intValue(body, "keepalive_interval", keepAliveDefaultInterval)
 		if interval < keepAliveMinInterval || interval > keepAliveMaxInterval {
-			return fmt.Errorf("保活间隔必须在 %d - %d 秒之间", keepAliveMinInterval, keepAliveMaxInterval)
+			return fmt.Errorf("Interval keepalive harus antara %d - %d detik", keepAliveMinInterval, keepAliveMaxInterval)
 		}
 		data["keepalive_interval"] = interval
 	}
@@ -2407,6 +2409,7 @@ func (app *App) routes() http.Handler {
 	mux.HandleFunc("POST /api/files/upload", app.handleUploadFile)
 	mux.HandleFunc("DELETE /v1/files/{file_id}", app.handleDeleteFile)
 	mux.HandleFunc("DELETE /api/files/{file_id}", app.handleDeleteFile)
+	mux.HandleFunc("GET /api/media/proxy", app.handleMediaProxy)
 
 	mux.HandleFunc("POST /anthropic/v1/messages", app.handleAnthropicMessages)
 	mux.HandleFunc("POST /v1/messages", app.handleAnthropicMessages)
@@ -4567,7 +4570,7 @@ func isTransientUpstreamErrorMessage(lower string) bool {
 	return false
 }
 
-const upstreamTemporaryClientMessage = "上游 Qwen 请求被网络超时、连接中断或 WAF 风控拦截；网关已按当前策略重试/切换账号但仍失败。请稍后重试，或在管理页刷新/复验账号后再试。"
+const upstreamTemporaryClientMessage = "Permintaan ke upstream Qwen terhalang oleh timeout jaringan, koneksi terputus, atau WAF / verifikasi keamanan bot (Alibaba Cloud WAF). Gateway telah mencoba ulang tetapi tetap gagal. Silakan buka chat.qwen.ai di browser untuk menyelesaikan slider captcha atau perbarui token akun Anda."
 
 func sanitizeClientErrorDetail(detail any) any {
 	switch v := detail.(type) {
@@ -5789,8 +5792,8 @@ func (app *App) handleImages(w http.ResponseWriter, r *http.Request) {
 	model := resolveMediaModel(stringValue(body, "model", ""), true)
 	setRequestLogFields(r.Context(), "surface", "images", "requested_model", stringValue(body, "model", ""), "resolved_model", model, "stream", "false", "tool_enabled", "false", "prompt_len", len(prompt))
 	app.logInfo(r.Context(), "图片生成请求解析完成", "size", size, "ratio", ratio, "width", width, "height", height, "n", n)
-	promptText := "请调用图片生成能力直接生成图片，不要只输出文字描述。如果可以生成图片，请返回可访问的图片链接或包含图片链接的结果。\n" +
-		"强制画布尺寸：" + size + " 像素。强制宽高比：" + ratio + "。必须严格按这个尺寸和比例生成，不要裁切成其它比例，不要改成默认尺寸。\n\n用户需求：" + prompt
+	promptText := "Gunakan kemampuan pembuatan gambar untuk langsung membuat gambar, jangan hanya mengeluarkan deskripsi teks. Kembalikan URL gambar yang dapat diakses.\n" +
+		"Ukuran kanvas: " + size + " piksel. Rasio aspek: " + ratio + ". Buat sesuai ukuran dan rasio ini secara tepat.\n\nPermintaan pengguna: " + prompt
 
 	urls, lastErr := app.createImageURLs(r.Context(), model, promptText, map[string]any{"size": size, "ratio": ratio, "width": width, "height": height})
 	if lastErr != nil {
@@ -5924,7 +5927,7 @@ func (app *App) handleVideos(w http.ResponseWriter, r *http.Request) {
 	model := resolveMediaModel(stringValue(body, "model", ""), false)
 	setRequestLogFields(r.Context(), "surface", "videos", "requested_model", stringValue(body, "model", ""), "resolved_model", model, "stream", "false", "tool_enabled", "false", "prompt_len", len(prompt))
 	app.logInfo(r.Context(), "视频生成请求解析完成", "size", size, "ratio", ratio, "width", width, "height", height, "duration", duration, "n", n)
-	promptText := fmt.Sprintf("%s\n\n视频要求：生成 %d 秒视频，宽高比 %s，参考画面尺寸 %s。", prompt, duration, ratio, size)
+	promptText := fmt.Sprintf("%s\n\nPersyaratan video: Buat video berdurasi %d detik, rasio aspek %s, ukuran referensi %s.", prompt, duration, ratio, size)
 	urls, lastErr := app.createVideoURLs(r.Context(), model, promptText, map[string]any{"size": size, "ratio": ratio, "width": width, "height": height, "duration": duration})
 	if lastErr != nil {
 		app.logWarn(r.Context(), "视频生成失败", "error", lastErr)
@@ -6047,6 +6050,56 @@ func (app *App) mediaRetryAttempts() int {
 		attempts = max(attempts, len(app.accounts.Snapshot()))
 	}
 	return attempts
+}
+
+func (app *App) handleMediaProxy(w http.ResponseWriter, r *http.Request) {
+	rawURL := r.URL.Query().Get("url")
+	if rawURL == "" {
+		writeError(w, http.StatusBadRequest, "Parameter 'url' wajib diisi")
+		return
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil || (!strings.HasSuffix(parsed.Host, "qwenlm.ai") && !strings.HasSuffix(parsed.Host, "aliyuncs.com") && !strings.HasSuffix(parsed.Host, "alicdn.com")) {
+		writeError(w, http.StatusBadRequest, "Host media tidak diizinkan")
+		return
+	}
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, rawURL, nil)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	req.Header.Set("User-Agent", defaultAndroidUA)
+	req.Header.Set("Referer", "https://chat.qwen.ai/")
+	req.Header.Set("app_waf", defaultAndroidAppWaf)
+
+	if rangeH := r.Header.Get("Range"); rangeH != "" {
+		req.Header.Set("Range", rangeH)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	defer resp.Body.Close()
+
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+	w.Header().Set("Cache-Control", "public, max-age=604800")
+	if ct := resp.Header.Get("Content-Type"); ct != "" {
+		w.Header().Set("Content-Type", ct)
+	}
+	if cl := resp.Header.Get("Content-Length"); cl != "" {
+		w.Header().Set("Content-Length", cl)
+	}
+	if cr := resp.Header.Get("Content-Range"); cr != "" {
+		w.Header().Set("Content-Range", cr)
+	}
+	if ar := resp.Header.Get("Accept-Ranges"); ar != "" {
+		w.Header().Set("Accept-Ranges", ar)
+	}
+	w.WriteHeader(resp.StatusCode)
+	_, _ = io.Copy(w, resp.Body)
 }
 
 func upstreamMediaErrorStatus(err error) int {
@@ -6364,8 +6417,8 @@ func (app *App) adminStatus(w http.ResponseWriter, r *http.Request) {
 		"per_account":        perAccount,
 		"chat_id_pool":       app.chatPool.Status(),
 		"runtime":            map[string]any{"mode": "go", "goroutines_note": "not exposed"},
-		"request_runtime":    map[string]any{"mode": "direct_http", "browser_required_for_requests": false, "description": "普通请求直连 HTTP，不经过浏览器"},
-		"browser_automation": map[string]any{"mode": "playwright", "description": "Go 后端通过 Playwright 浏览器自动化支持邮箱激活"},
+		"request_runtime":    map[string]any{"mode": "direct_http", "browser_required_for_requests": false, "description": "Permintaan API reguler terhubung langsung ke HTTP upstream tanpa browser"},
+		"browser_automation": map[string]any{"mode": "playwright", "description": "Otomatisasi browser Playwright di backend Go untuk aktivasi email"},
 	})
 }
 
@@ -6423,22 +6476,39 @@ func (app *App) adminAddAccount(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "Invalid JSON body")
 		return
 	}
+	email := stringValue(body, "email", "")
+	password := stringValue(body, "password", "")
 	token := stringValue(body, "token", "")
-	if token == "" {
-		writeError(w, http.StatusBadRequest, "token is required")
+	cookies := stringValue(body, "cookies", "")
+
+	if token == "" && email != "" && password != "" {
+		res, err := app.client.SignIn(r.Context(), email, password)
+		if err != nil {
+			writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": err.Error()})
+			return
+		}
+		token = res.Token
+		if cookies == "" {
+			cookies = res.Cookies
+		}
+	} else if token == "" {
+		writeError(w, http.StatusBadRequest, "Silakan isi Token ATAU masukkan kombinasi Email dan Kata Sandi")
 		return
 	}
+	if email == "" {
+		email = fmt.Sprintf("manual_%d@qwen", time.Now().Unix())
+	}
 	acc := Account{
-		Email:      stringValue(body, "email", fmt.Sprintf("manual_%d@qwen", time.Now().Unix())),
-		Password:   stringValue(body, "password", ""),
+		Email:      email,
+		Password:   password,
 		Token:      token,
-		Cookies:    stringValue(body, "cookies", ""),
+		Cookies:    cookies,
 		Username:   stringValue(body, "username", ""),
 		StatusCode: "valid",
 	}
 	verify := app.client.VerifyTokenDetail(r.Context(), token)
 	if !verify.Valid {
-		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": "Invalid token (验证失败，请确认Token有效)", "status_code": verify.StatusCode, "detail": verify.Error})
+		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": "Token tidak valid (verifikasi gagal, pastikan token valid)", "status_code": verify.StatusCode, "detail": verify.Error})
 		return
 	}
 	if err := app.accounts.Add(acc); err != nil {
@@ -6476,7 +6546,7 @@ func (app *App) adminActivateAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	email := r.PathValue("email")
-	app.logInfo(r.Context(), "账号激活请求进入", "account", email)
+	app.logInfo(r.Context(), "Permintaan aktivasi akun masuk", "account", email)
 	var target *Account
 	for _, acc := range app.accounts.Snapshot() {
 		if acc.Email == email {
@@ -6486,7 +6556,7 @@ func (app *App) adminActivateAccount(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if target == nil {
-		app.logWarn(r.Context(), "账号激活目标不存在", "account", email)
+		app.logWarn(r.Context(), "Target aktivasi akun tidak ditemukan", "account", email)
 		writeError(w, http.StatusNotFound, "Account not found")
 		return
 	}
@@ -6494,31 +6564,45 @@ func (app *App) adminActivateAccount(w http.ResponseWriter, r *http.Request) {
 		verify := app.client.VerifyTokenDetail(r.Context(), target.Token)
 		if verify.Valid {
 			_ = app.accounts.MarkVerification(target.Email, verify)
-			app.logInfo(r.Context(), "账号已激活，现有 token 验证通过", "account", email)
-			writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "账号已激活，现有 token 验证通过"})
+			app.logInfo(r.Context(), "Akun sudah aktif, token saat ini valid", "account", email)
+			writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "Akun sudah aktif, token saat ini berhasil diverifikasi"})
 			return
 		}
-		app.logWarn(r.Context(), "账号标记有效但现有 token 验证失败，继续激活流程", "account", email, "status_code", verify.StatusCode, "error", verify.Error)
+		app.logWarn(r.Context(), "Akun ditandai valid namun verifikasi token gagal, melanjutkan aktivasi", "account", email, "status_code", verify.StatusCode, "error", verify.Error)
+	}
+	if target.Email != "" && target.Password != "" {
+		res, err := app.client.SignIn(r.Context(), target.Email, target.Password)
+		if err == nil && res.Token != "" {
+			target.Token = res.Token
+			target.Cookies = res.Cookies
+			target.Valid = true
+			target.StatusCode = "valid"
+			target.ActivationPending = false
+			_ = app.accounts.Add(*target)
+			app.logInfo(r.Context(), "Aktivasi/Login akun via API mobile berhasil", "account", email)
+			writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "Aktivasi/Login akun via API mobile berhasil"})
+			return
+		}
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
 	defer cancel()
 	updated, ok, err := app.activateQwenAccount(ctx, *target)
 	if err != nil || !ok {
-		msg := "未能找到激活链接或获取Token"
+		msg := "Tautan aktivasi atau Token tidak ditemukan"
 		if err != nil {
 			msg = err.Error()
 		}
-		app.logWarn(r.Context(), "账号激活失败", "account", email, "error", msg)
+		app.logWarn(r.Context(), "Aktivasi akun gagal", "account", email, "error", msg)
 		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": msg})
 		return
 	}
 	if err := app.accounts.Add(updated); err != nil {
-		app.logWarn(r.Context(), "账号激活保存失败", "account", email, "error", err)
+		app.logWarn(r.Context(), "Penyimpanan akun setelah aktivasi gagal", "account", email, "error", err)
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	app.logInfo(r.Context(), "账号激活成功", "account", email)
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "账号激活成功"})
+	app.logInfo(r.Context(), "Aktivasi akun berhasil", "account", email)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "Aktivasi akun berhasil"})
 }
 
 func (app *App) adminVerifyAccount(w http.ResponseWriter, r *http.Request) {
@@ -6543,7 +6627,7 @@ func (app *App) adminDeleteAccount(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := app.accounts.Remove(r.PathValue("email")); err != nil {
 		if strings.Contains(err.Error(), "environment account") {
-			writeError(w, http.StatusBadRequest, "环境变量注入账号不能在面板删除，请移除对应环境变量后重启服务")
+			writeError(w, http.StatusBadRequest, "Akun dari environment variable tidak dapat dihapus melalui panel, silakan hapus dari file environment lalu restart layanan")
 			return
 		}
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -6646,10 +6730,10 @@ func (app *App) adminGetKeys(w http.ResponseWriter, r *http.Request) {
 	for key := range app.apiKeys {
 		keys = append(keys, key)
 		source := "managed"
-		label := "面板创建 Key"
+		label := "Key Panel"
 		if app.envAPIKeys[key] {
 			source = "env"
-			label = "环境变量注入 Key"
+			label = "Key Environment"
 		}
 		items = append(items, map[string]any{"key": key, "source": source, "label": label})
 	}
@@ -6682,11 +6766,11 @@ func (app *App) adminCreateKey(w http.ResponseWriter, r *http.Request) {
 	key := strings.TrimSpace(body.Key)
 	if mode == "custom" {
 		if key == "" {
-			writeError(w, http.StatusBadRequest, "自定义 Key 不能为空")
+			writeError(w, http.StatusBadRequest, "Key kustom tidak boleh kosong")
 			return
 		}
 		if strings.ContainsAny(key, " \t\r\n") {
-			writeError(w, http.StatusBadRequest, "自定义 Key 不能包含空白字符")
+			writeError(w, http.StatusBadRequest, "Key kustom tidak boleh mengandung spasi")
 			return
 		}
 	} else {
@@ -6695,7 +6779,7 @@ func (app *App) adminCreateKey(w http.ResponseWriter, r *http.Request) {
 		key = "sk-" + hex.EncodeToString(buf)
 	}
 	if app.apiKeys[key] {
-		writeError(w, http.StatusConflict, "API Key 已存在")
+		writeError(w, http.StatusConflict, "API Key sudah ada")
 		return
 	}
 	app.apiKeys[key] = true
@@ -6710,7 +6794,7 @@ func (app *App) adminDeleteKey(w http.ResponseWriter, r *http.Request) {
 	}
 	key := r.PathValue("key")
 	if app.envAPIKeys[key] {
-		writeError(w, http.StatusBadRequest, "环境变量注入 Key 不能在面板删除，请移除对应环境变量后重启服务")
+		writeError(w, http.StatusBadRequest, "API Key dari environment variable tidak dapat dihapus melalui panel, silakan hapus dari file environment lalu restart layanan")
 		return
 	}
 	delete(app.apiKeys, key)
@@ -7187,12 +7271,12 @@ func emptyCompletionFallback(req StandardRequest, result CompletionResult) strin
 	case result.FinishReason == "missing_tool_continuation":
 		return missingToolContinuationFallback()
 	case result.FinishReason == "empty":
-		return "Upstream returned an empty response. Continue from the last confirmed task state and issue the next required action."
+		return "Upstream Qwen mengembalikan respons kosong (biasanya akun terhalang verifikasi Captcha/WAF atau token kedaluwarsa). Silakan periksa status akun di menu Manajemen Akun."
 	case strings.HasPrefix(result.FinishReason, "blocked_tool_name:"):
 		tool := strings.TrimPrefix(result.FinishReason, "blocked_tool_name:")
-		return "Upstream produced invalid tool-availability text for " + firstNonEmpty(tool, "the requested tool") + " and no recoverable QNML tool call. Continue from the last confirmed task state with one fresh complete QNML tool call."
+		return "Upstream menghasilkan teks tidak valid untuk tool: " + firstNonEmpty(tool, "tool yang diminta")
 	default:
-		return "No recoverable assistant content was produced. Continue from the last confirmed task state."
+		return "Tidak ada konten yang dihasilkan oleh upstream. Silakan periksa status akun di menu Manajemen Akun."
 	}
 }
 
@@ -7667,7 +7751,7 @@ func isLikelyNarrationOnlyToolTurn(text string) bool {
 	if missingToolContinuationLeadRe.MatchString(first) && runes <= 1500 && len(nonEmpty) <= 20 {
 		return true
 	}
-	return runes <= 220 && len(nonEmpty) <= 4
+	return false
 }
 
 func isInitialNarrationOnlyToolTurn(text string) bool {
@@ -7874,10 +7958,63 @@ type TokenVerifyResult struct {
 	Error      string
 }
 
+const (
+	defaultAndroidUA     = "Dalvik/2.1.0 (Linux; U; Android 15; 25028RN03A Build/AP3A.240905.015.A2) AliApp(QWENCHAT/2.5.1) AppType/Release AplusBridgeLite,Dalvik/2.1.0 (Linux; U; Android 15; 25028RN03A Build/AP3A.240905.015.A2)"
+	defaultAndroidAppWaf = "Z9Tr56YmQpXcO2K_d_3nAbJvRqMLFW8HTNjvRguWHEowM1xY"
+)
+
+func qwenDeviceID() string {
+	b := make([]byte, 16)
+	_, _ = cryptorand.Read(b)
+	h := md5.Sum(b)
+	return "ai" + hex.EncodeToString(h[:])
+}
+
+func qwenHeaders(token string) http.Header {
+	return qwenHeadersWithCookies(token, "")
+}
+
+func qwenHeadersWithCookies(token, cookies string) http.Header {
+	h := http.Header{}
+	if token != "" {
+		h.Set("Authorization", "Bearer "+token)
+	}
+	h.Set("x-request-id", qwenRequestID())
+	h.Set("x-device-id", qwenDeviceID())
+	h.Set("User-Agent", defaultAndroidUA)
+	h.Set("Connection", "Keep-Alive")
+	h.Set("Accept", "application/json")
+	h.Set("X-Platform", "android")
+	h.Set("source", "app")
+	h.Set("Accept-Language", "en-US")
+	h.Set("Accept-Charset", "UTF-8")
+	h.Set("Cache-Control", "no-store")
+	h.Set("app_waf", defaultAndroidAppWaf)
+	if cookies != "" {
+		h.Set("Cookie", cookies)
+	}
+	return h
+}
+
+func (c *QwenClient) headersForToken(token string) http.Header {
+	cookies := ""
+	if c.pool != nil {
+		for _, acc := range c.pool.Snapshot() {
+			if acc.Token == token && acc.Cookies != "" {
+				cookies = acc.Cookies
+				break
+			}
+		}
+	}
+	return qwenHeadersWithCookies(token, cookies)
+}
+
 func NewQwenClient(pool *AccountPool, settings Settings, logger *slog.Logger) *QwenClient {
+	jar, _ := cookiejar.New(nil)
 	return &QwenClient{
 		pool: pool, settings: settings, logger: logger,
 		http: &http.Client{
+			Jar: jar,
 			Transport: &http.Transport{
 				Proxy: http.ProxyFromEnvironment, MaxIdleConns: 100, MaxIdleConnsPerHost: 20,
 				IdleConnTimeout:       30 * time.Second,
@@ -7890,23 +8027,73 @@ func NewQwenClient(pool *AccountPool, settings Settings, logger *slog.Logger) *Q
 	}
 }
 
-func qwenHeaders(token string) http.Header {
-	h := http.Header{}
-	h.Set("Authorization", "Bearer "+token)
-	h.Set("x-request-id", qwenRequestID())
-	h.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
-	h.Set("Accept", "application/json, text/plain, */*")
-	h.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
-	h.Set("Referer", qwenBaseURL+"/")
-	h.Set("Origin", qwenBaseURL)
-	h.Set("Connection", "keep-alive")
-	h.Set("sec-ch-ua", `"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"`)
-	h.Set("sec-ch-ua-mobile", "?0")
-	h.Set("sec-ch-ua-platform", `"Windows"`)
-	h.Set("sec-fetch-dest", "empty")
-	h.Set("sec-fetch-mode", "cors")
-	h.Set("sec-fetch-site", "same-origin")
-	return h
+type SignInResult struct {
+	Token   string
+	Cookies string
+	Email   string
+}
+
+func (c *QwenClient) SignIn(ctx context.Context, email, password string) (*SignInResult, error) {
+	if strings.TrimSpace(email) == "" || strings.TrimSpace(password) == "" {
+		return nil, errors.New("Email dan kata sandi tidak boleh kosong")
+	}
+	hash := sha256.Sum256([]byte(password))
+	hashedPassword := hex.EncodeToString(hash[:])
+
+	reqBody := map[string]any{
+		"email":    strings.TrimSpace(email),
+		"password": hashedPassword,
+	}
+	raw, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, qwenBaseURL+"/api/v2/auths/signin", bytes.NewReader(raw))
+	if err != nil {
+		return nil, err
+	}
+	req.Header = qwenHeaders("")
+	req.Header.Set("Content-Type", "application/json; charset=UTF-8")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("Gagal menghubungi server Qwen: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var res map[string]any
+	if err := json.Unmarshal(respBytes, &res); err != nil {
+		return nil, fmt.Errorf("Gagal mengurai respons signin: %s", string(respBytes))
+	}
+
+	if success, ok := res["success"].(bool); !ok || !success {
+		data, _ := res["data"].(map[string]any)
+		details := stringValue(data, "details", stringValue(res, "message", "Login gagal"))
+		return nil, fmt.Errorf("Login Qwen gagal: %s", details)
+	}
+
+	data, _ := res["data"].(map[string]any)
+	token := stringValue(data, "token", "")
+	if token == "" {
+		return nil, errors.New("Token tidak ditemukan dalam respons login Qwen")
+	}
+
+	var cookieParts []string
+	for _, cookie := range resp.Cookies() {
+		cookieParts = append(cookieParts, cookie.Name+"="+cookie.Value)
+	}
+	cookieStr := strings.Join(cookieParts, "; ")
+
+	return &SignInResult{
+		Token:   token,
+		Cookies: cookieStr,
+		Email:   email,
+	}, nil
 }
 
 func qwenRequestID() string {
@@ -7941,9 +8128,9 @@ func (c *QwenClient) requestJSON(ctx context.Context, method, path, token string
 	if err != nil {
 		return 0, "", err
 	}
-	req.Header = qwenHeaders(token)
+	req.Header = c.headersForToken(token)
 	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Content-Type", "application/json; charset=UTF-8")
 	}
 	upstreamRequestID := req.Header.Get("x-request-id")
 	start := time.Now()
@@ -8036,9 +8223,9 @@ func (c *QwenClient) StreamChat(ctx context.Context, token, chatID string, paylo
 	if err != nil {
 		return err
 	}
-	req.Header = qwenHeaders(token)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "text/event-stream")
+	req.Header = c.headersForToken(token)
+	req.Header.Set("Content-Type", "application/json; charset=UTF-8")
+	req.Header.Set("Accept", "*/*,text/event-stream")
 	upstreamRequestID := req.Header.Get("x-request-id")
 	logInfo(c.logger, ctx, "开始上游流式请求", "chat_id", chatID, "token", redactToken(token), "upstream_request_id", upstreamRequestID, "payload_bytes", len(raw))
 	start := time.Now()
@@ -8152,7 +8339,11 @@ func (c *QwenClient) StreamChat(ctx context.Context, token, chatID string, paylo
 						if upstreamError := upstream.ExtractUpstreamError(rawTail); upstreamError != "" {
 							return errors.New(upstreamError)
 						}
+						if strings.Contains(rawTail, "RGV587_ERROR") || strings.Contains(rawTail, "FAIL_SYS_USER_VALIDATE") || strings.Contains(rawTail, "punish") || strings.Contains(rawTail, "_____tmd_____") {
+							return errors.New("Alibaba Cloud WAF Captcha / Anti-Bot (RGV587_ERROR): Sesi atau IP terhalang verifikasi keamanan. Silakan buka chat.qwen.ai di browser Anda, kirim satu pesan untuk menyelesaikan verifikasi captcha, lalu perbarui token akun.")
+						}
 						logWarn(c.logger, ctx, "上游 SSE 未解析到有效 delta", "chat_id", chatID, "stream_bytes", totalBytes, "raw_tail", truncate(rawTail, 500))
+						return errors.New("Upstream Qwen mengembalikan respons kosong tanpa token delta.")
 					}
 					return nil
 				}
@@ -8186,8 +8377,8 @@ func (c *QwenClient) PostChatCompletionOnce(ctx context.Context, token, chatID s
 	if err != nil {
 		return 0, "", err
 	}
-	req.Header = qwenHeaders(token)
-	req.Header.Set("Content-Type", "application/json")
+	req.Header = c.headersForToken(token)
+	req.Header.Set("Content-Type", "application/json; charset=UTF-8")
 	req.Header.Set("X-Accel-Buffering", "no")
 	logInfo(c.logger, ctx, "开始上游非流式请求", "chat_id", chatID, "token", redactToken(token), "payload_bytes", len(raw))
 	start := time.Now()

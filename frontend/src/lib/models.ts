@@ -41,14 +41,14 @@ export const FALLBACK_VIDEO_MODELS: ModelOption[] = [
 ]
 
 export const CAPABILITY_LABELS: Array<{ key: keyof ModelCapability; label: string }> = [
-  { key: "thinking", label: "思考" },
-  { key: "search", label: "搜索" },
-  { key: "vision", label: "视觉" },
-  { key: "deep_research", label: "研究" },
-  { key: "image_gen", label: "图片" },
-  { key: "video_gen", label: "视频" },
-  { key: "web_dev", label: "建站" },
-  { key: "slides", label: "PPT" },
+  { key: "thinking", label: "Penalaran" },
+  { key: "search", label: "Pencarian" },
+  { key: "vision", label: "Visual" },
+  { key: "deep_research", label: "Riset" },
+  { key: "image_gen", label: "Gambar" },
+  { key: "video_gen", label: "Video" },
+  { key: "web_dev", label: "Web Dev" },
+  { key: "slides", label: "Presentasi" },
 ]
 
 const MODEL_MODE_SUFFIX_RE = /-(thinking|search|deep-research|deep_research|image|video|webdev|web-dev|slides|t2i|t2v)$/i
@@ -212,14 +212,14 @@ export function groupModelOptions(options: ModelOption[]): ModelGroup[] {
 
 export function formatModeLabel(mode?: string): string {
   switch (mode) {
-    case "thinking": return "思考"
-    case "search": return "搜索"
-    case "deep_research": return "研究"
-    case "image": return "图片"
-    case "video": return "视频"
-    case "webdev": return "建站"
-    case "slides": return "PPT"
-    default: return "对话"
+    case "thinking": return "Penalaran"
+    case "search": return "Pencarian"
+    case "deep_research": return "Riset"
+    case "image": return "Gambar"
+    case "video": return "Video"
+    case "webdev": return "Web Dev"
+    case "slides": return "Presentasi"
+    default: return "Chat"
   }
 }
 

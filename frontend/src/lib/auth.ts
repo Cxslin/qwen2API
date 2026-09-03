@@ -1,8 +1,8 @@
 /**
- * 规范化用户粘贴的管理凭证。
+ * Normalisasi kredensial manajemen yang ditempel pengguna.
  *
- * 浏览器不能直接读取后端 data/api_keys.json；这里仅处理用户已经粘贴到
- * 控制台的值，避免把 "Bearer xxx"、Authorization 头或 JSON 片段原样保存。
+ * Browser tidak dapat langsung membaca data/api_keys.json dari backend; fungsi ini
+ * memproses teks yang ditempel pengguna agar terhindar dari prefix "Bearer " atau potongan JSON.
  */
 export function normalizeApiKey(input: string): string {
   let value = String(input || "").trim()
@@ -20,7 +20,7 @@ export function normalizeApiKey(input: string): string {
       }
     }
   } catch {
-    // 普通 key 文本不是 JSON，继续按 header/text 形式解析。
+    // Teks key biasa bukan JSON, lanjutkan penguraian sebagai header/text.
   }
 
   value = value.replace(/^[\s"'`]+|[\s"'`,]+$/g, "").trim()
@@ -46,7 +46,7 @@ export function getStoredApiKey(): string {
     const stored = localStorage.getItem('qwen2api_key')
     if (stored && stored.trim()) return normalizeApiKey(stored)
   } catch {
-    // localStorage 不可用时返回空凭证，由服务端明确拒绝未授权请求。
+    // Jika localStorage tidak tersedia, kembalikan string kosong.
   }
   return normalizeApiKey((import.meta.env.VITE_DEFAULT_ADMIN_KEY as string | undefined) || '')
 }
@@ -74,15 +74,15 @@ export async function adminRequestErrorMessage(res: Response): Promise<string> {
     const data = await res.clone().json()
     detail = String(data.detail || data.error || data.message || "").trim()
   } catch {
-    // 非 JSON 错误响应只根据 HTTP 状态提示。
+    // Respons error non-JSON hanya menggunakan status HTTP.
   }
 
   if (res.status === 401) {
-    return "未携带会话 Key：请到「系统设置」粘贴 ADMIN_KEY 或 data/api_keys.json 中已有 API Key"
+    return "Tidak ada Kunci Sesi: Silakan masukkan ADMIN_KEY atau API Key di menu 'Pengaturan Sistem'"
   }
   if (res.status === 403) {
-    return "会话 Key 不匹配：请确认粘贴的是当前 data/api_keys.json 中的完整 key，且不要带 Bearer 前缀"
+    return "Kunci Sesi tidak cocok: Pastikan API Key sesuai data/api_keys.json tanpa prefix Bearer"
   }
   if (detail) return detail
-  return `请求失败（HTTP ${res.status}）`
+  return `Permintaan gagal (HTTP ${res.status})`
 }

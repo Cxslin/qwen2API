@@ -3,22 +3,20 @@ import { Button } from "../components/ui/button"
 import {
   Ban,
   CheckCircle2,
-  Clipboard,
+  Copy,
   Download,
-  Edit3,
   FileUp,
-  Import,
-  MailWarning,
+  FolderArchive,
+  Pencil,
   Plus,
   RefreshCw,
   RotateCw,
   Search,
   ShieldAlert,
   Trash2,
-  UploadCloud,
   UserRound,
   XCircle,
-  Lock,
+  Zap,
 } from "lucide-react"
 import { toast } from "sonner"
 import { adminRequestErrorMessage, getAuthHeader, getStoredApiKey } from "../lib/auth"
@@ -93,12 +91,12 @@ function statusStyle(code?: string) {
 }
 
 const RATE_LIMIT_LABELS: Record<string, string> = {
-  chat: "对话限流",
-  image: "图片限额",
-  video: "视频限额",
-  metadata: "元数据限流",
-  unknown: "旧版未知限额",
-  legacy: "旧版限额",
+  chat: "Rate Limit Chat",
+  image: "Limit Kuota Gambar",
+  video: "Limit Kuota Video",
+  metadata: "Rate Limit Metadata",
+  unknown: "Limit Tidak Diketahui",
+  legacy: "Limit Versi Lama",
 }
 
 function activeRateLimits(acc: AccountItem) {
@@ -107,7 +105,7 @@ function activeRateLimits(acc: AccountItem) {
     .filter(([, state]) => Number(state?.until || 0) > now)
     .map(([usage, state]) => ({
       usage,
-      label: RATE_LIMIT_LABELS[usage] || `${usage} 限额`,
+      label: RATE_LIMIT_LABELS[usage] || `Limit ${usage}`,
       until: Number(state.until || 0),
       error: state.last_error || state.reason || "",
     }))
@@ -115,7 +113,7 @@ function activeRateLimits(acc: AccountItem) {
   if ((acc.rate_limited_until || 0) > now && !items.some(item => item.usage === "chat")) {
     items.push({
       usage: "legacy",
-      label: "旧版限额",
+      label: "Limit Versi Lama",
       until: Number(acc.rate_limited_until || 0),
       error: acc.last_error || "",
     })
@@ -142,23 +140,23 @@ function formatLimitTime(until: number) {
 function limitSummary(acc: AccountItem) {
   const limits = activeRateLimits(acc)
   if (limits.length === 0) return ""
-  return limits.map(item => `${item.label}：${formatLimitTime(item.until)} 恢复`).join("；")
+  return limits.map(item => `${item.label}: pulih ${formatLimitTime(item.until)}`).join("; ")
 }
 
 function statusText(acc: AccountItem) {
   switch (effectiveStatusCode(acc)) {
-    case "valid": return "\u6b63\u5e38"
-    case "pending_activation": return "\u672a\u6fc0\u6d3b"
-    case "rate_limited": return hasActiveChatLimit(acc) ? "对话限流" : "\u9650\u6d41"
-    case "banned": return "\u5c01\u7981"
-    case "auth_error": return "\u8ba4\u8bc1\u5931\u6548"
-    default: return acc.valid ? "\u6b63\u5e38" : "\u5f02\u5e38"
+    case "valid": return "Normal"
+    case "pending_activation": return "Belum Aktivasi"
+    case "rate_limited": return hasActiveChatLimit(acc) ? "Rate Limit Chat" : "Rate Limit"
+    case "banned": return "Diblokir"
+    case "auth_error": return "Autentikasi Gagal"
+    default: return acc.valid ? "Normal" : "Tidak Normal"
   }
 }
 
 function statusNote(acc: AccountItem) {
   const limits = activeRateLimits(acc)
-  if (limits.length > 0) return limits.map(item => `${item.label}${item.error ? `：${item.error}` : ""}`).join("；")
+  if (limits.length > 0) return limits.map(item => `${item.label}${item.error ? `: ${item.error}` : ""}`).join("; ")
   return acc.last_error || ""
 }
 
@@ -185,7 +183,7 @@ function failureOf(acc: AccountItem) {
 function recoveryText(acc: AccountItem) {
   const summary = limitSummary(acc)
   if (summary) return summary
-  if (acc.status_code === "rate_limited") return "\u7b49\u5f85\u4e0a\u6e38\u6062\u590d"
+  if (acc.status_code === "rate_limited") return "Menunggu pemulihan upstream"
   return "-"
 }
 
@@ -201,11 +199,11 @@ function safeFileName(value: string) {
 }
 
 function localizeError(error?: string) {
-  if (!error) return "\u672a\u77e5\u9519\u8bef"
+  if (!error) return "Kesalahan tidak diketahui"
   const lower = error.toLowerCase()
-  if (lower.includes("activation already in progress")) return "\u8d26\u53f7\u6b63\u5728\u6fc0\u6d3b\u4e2d\uff0c\u8bf7\u7a0d\u540e\u5237\u65b0"
-  if (lower.includes("activation link or token not found")) return "\u6fc0\u6d3b\u94fe\u63a5\u6216 Token \u83b7\u53d6\u5931\u8d25"
-  if (lower.includes("token invalid") || lower.includes("token") || lower.includes("auth")) return "Token \u65e0\u6548\u6216\u8ba4\u8bc1\u5931\u8d25"
+  if (lower.includes("activation already in progress")) return "Akun sedang dalam proses aktivasi, silakan refresh sebentar lagi"
+  if (lower.includes("activation link or token not found")) return "Tautan aktivasi atau Token tidak ditemukan"
+  if (lower.includes("token invalid") || lower.includes("token") || lower.includes("auth")) return "Token tidak valid atau autentikasi gagal"
   return error
 }
 
@@ -381,7 +379,7 @@ export default function AccountsPage() {
 
   const requireSessionKey = () => {
     if (getStoredApiKey()) return true
-    toast.error("请先到「系统设置」粘贴 ADMIN_KEY 或 data/api_keys.json 中已有 API Key")
+    toast.error("Silakan masukkan ADMIN_KEY atau API Key di menu 'Pengaturan Sistem' terlebih dahulu")
     return false
   }
 
@@ -393,7 +391,7 @@ export default function AccountsPage() {
   const fetchAccounts = (notify = false) => {
     if (!getStoredApiKey()) {
       setAccounts([])
-      toast.error("请先到「系统设置」粘贴 ADMIN_KEY 或 data/api_keys.json 中已有 API Key")
+      toast.error("Silakan masukkan ADMIN_KEY atau API Key di menu 'Pengaturan Sistem' terlebih dahulu")
       return
     }
     fetch(`${API_BASE}/api/admin/accounts`, { headers: getAuthHeader() })
@@ -402,9 +400,9 @@ export default function AccountsPage() {
         const next = data.accounts || []
         setAccounts(next)
         setSelected(prev => new Set([...prev].filter(email => next.some((acc: AccountItem) => acc.email === email))))
-        if (notify) toast.success("账号列表已刷新")
+        if (notify) toast.success("Daftar akun disegarkan")
       })
-      .catch(err => toast.error(err instanceof Error ? err.message : "\u5237\u65b0\u8d26\u53f7\u5217\u8868\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5\u4f1a\u8bdd\u5bc6\u94a5"))
+      .catch(err => toast.error(err instanceof Error ? err.message : "Gagal memuat daftar akun, periksa Kunci Sesi"))
   }
 
   useEffect(() => {
@@ -467,11 +465,15 @@ export default function AccountsPage() {
 
   const handleAdd = () => {
     if (!requireSessionKey()) return
-    if (!token.trim()) {
-      toast.error("\u8bf7\u5148\u586b\u5199 Token")
+    if (!token.trim() && (!email.trim() || !password.trim())) {
+      toast.error("Silakan isi Token ATAU masukkan kombinasi Email dan Kata Sandi")
       return
     }
-    const id = toast.loading("\u6b63\u5728\u6ce8\u5165\u8d26\u53f7...")
+    const id = toast.loading(
+      !token.trim() && email.trim() && password.trim()
+        ? "Melakukan login via API Android Qwen..."
+        : "Menambahkan akun..."
+    )
     fetch(`${API_BASE}/api/admin/accounts`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...getAuthHeader() },
@@ -483,50 +485,50 @@ export default function AccountsPage() {
     }).then(readAdminJSON)
       .then(data => {
         if (data.ok) {
-          toast.success("\u8d26\u53f7\u5df2\u52a0\u5165\u8d26\u53f7\u6c60", { id })
+          toast.success("Akun berhasil ditambahkan ke pool", { id })
           setEmail("")
           setPassword("")
           setToken("")
           fetchAccounts()
         } else {
-          toast.error(localizeError(data.error) || "\u8d26\u53f7\u6ce8\u5165\u5931\u8d25", { id, duration: 8000 })
+          toast.error(localizeError(data.error) || "Gagal menambahkan akun", { id, duration: 8000 })
         }
       })
-      .catch(err => toast.error(err instanceof Error ? err.message : "\u8d26\u53f7\u6ce8\u5165\u8bf7\u6c42\u5931\u8d25", { id }))
+      .catch(err => toast.error(err instanceof Error ? err.message : "Permintaan penambahan akun gagal", { id }))
   }
 
   const handleDelete = (target: AccountItem) => {
     if (!requireSessionKey()) return
     if (target.source === "env") {
-      toast.error("\u73af\u5883\u53d8\u91cf\u6ce8\u5165\u8d26\u53f7\u4e0d\u80fd\u5728\u9762\u677f\u5220\u9664")
+      toast.error("Akun dari environment variable tidak dapat dihapus melalui panel")
       return
     }
 
-    const id = toast.loading(`\u6b63\u5728\u5220\u9664 ${target.email}...`)
+    const id = toast.loading(`Menghapus ${target.email}...`)
     fetch(`${API_BASE}/api/admin/accounts/${encodeURIComponent(target.email)}`, {
       method: "DELETE",
       headers: getAuthHeader(),
     }).then(async res => {
       if (!res.ok) throw new Error(await adminRequestErrorMessage(res))
-      toast.success(`\u5df2\u5220\u9664 ${target.email}`, { id })
+      toast.success(`Berhasil menghapus ${target.email}`, { id })
       setSelected(prev => {
         const next = new Set(prev)
         next.delete(target.email)
         return next
       })
       fetchAccounts()
-    }).catch(err => toast.error(err instanceof Error ? err.message : "\u5220\u9664\u8d26\u53f7\u5931\u8d25", { id }))
+    }).catch(err => toast.error(err instanceof Error ? err.message : "Gagal menghapus akun", { id }))
   }
 
   const handleDeleteSelected = async () => {
     if (!requireSessionKey()) return
     const deletableAccounts = selectedAccounts.filter(acc => acc.source !== "env")
     if (!deletableAccounts.length) {
-      toast.error("请先选择账号")
+      toast.error("Silakan pilih akun terlebih dahulu")
       return
     }
     const skipped = selectedAccounts.length - deletableAccounts.length
-    const id = toast.loading(`正在删除 ${deletableAccounts.length} 个选中账号...`)
+    const id = toast.loading(`Menghapus ${deletableAccounts.length} akun terpilih...`)
     let ok = 0
     let failed = 0
     for (const acc of deletableAccounts) {
@@ -541,7 +543,7 @@ export default function AccountsPage() {
         failed += 1
       }
     }
-    toast.success(`删除完成：成功 ${ok}，失败 ${failed}${skipped ? `，跳过环境变量账号 ${skipped}` : ""}`, { id, duration: 8000 })
+    toast.success(`Penghapusan selesai: Berhasil ${ok}, Gagal ${failed}${skipped ? `, Melewati akun environment ${skipped}` : ""}`, { id, duration: 8000 })
     setSelected(new Set())
     fetchAccounts()
   }
@@ -550,10 +552,10 @@ export default function AccountsPage() {
     if (!requireSessionKey()) return
     const abnormal = accounts.filter(acc => acc.status_code !== "valid" && !acc.valid)
     if (!abnormal.length) {
-      toast.success("当前没有异常账号需要移除")
+      toast.success("Tidak ada akun bermasalah yang perlu dihapus")
       return
     }
-    const id = toast.loading(`正在移除 ${abnormal.length} 个异常账号...`)
+    const id = toast.loading(`Menghapus ${abnormal.length} akun bermasalah...`)
     let ok = 0
     let failed = 0
     for (const acc of abnormal) {
@@ -568,7 +570,7 @@ export default function AccountsPage() {
         failed += 1
       }
     }
-    toast.success(`异常账号移除完成：成功 ${ok}，失败 ${failed}`, { id, duration: 8000 })
+    toast.success(`Penghapusan akun bermasalah selesai: Berhasil ${ok}, Gagal ${failed}`, { id, duration: 8000 })
     setSelected(new Set())
     fetchAccounts()
   }
@@ -576,50 +578,50 @@ export default function AccountsPage() {
   const handleVerify = (targetEmail: string) => {
     if (!requireSessionKey()) return
     setVerifying(targetEmail)
-    const id = toast.loading(`\u6b63\u5728\u9a8c\u8bc1 ${targetEmail}...`)
+    const id = toast.loading(`Memverifikasi ${targetEmail}...`)
     fetch(`${API_BASE}/api/admin/accounts/${encodeURIComponent(targetEmail)}/verify`, {
       method: "POST",
       headers: getAuthHeader(),
     }).then(readAdminJSON)
       .then(data => {
         if (data.valid) {
-          toast.success(`\u9a8c\u8bc1\u901a\u8fc7\uff1a${targetEmail}`, { id })
+          toast.success(`Verifikasi berhasil: ${targetEmail}`, { id })
         } else {
-          toast.error(`\u9a8c\u8bc1\u5931\u8d25\uff1a${statusText(data) || localizeError(data.error)}`, { id, duration: 8000 })
+          toast.error(`Verifikasi gagal: ${statusText(data) || localizeError(data.error)}`, { id, duration: 8000 })
         }
         fetchAccounts()
       })
-      .catch(err => toast.error(err instanceof Error ? err.message : "\u9a8c\u8bc1\u8bf7\u6c42\u5931\u8d25", { id }))
+      .catch(err => toast.error(err instanceof Error ? err.message : "Permintaan verifikasi gagal", { id }))
       .finally(() => setVerifying(null))
   }
 
   const handleVerifyAll = () => {
     if (!requireSessionKey()) return
     setVerifyingAll(true)
-    const id = toast.loading("\u6b63\u5728\u5e76\u53d1\u5de1\u68c0\u6240\u6709\u8d26\u53f7...")
+    const id = toast.loading("Memeriksa seluruh akun secara simultan...")
     fetch(`${API_BASE}/api/admin/verify`, {
       method: "POST",
       headers: getAuthHeader(),
     }).then(readAdminJSON)
       .then(data => {
         if (data.ok) {
-          toast.success(`\u5168\u91cf\u5de1\u68c0\u5b8c\u6210\uff0c\u5e76\u53d1\u6570\uff1a${data.concurrency || 1}`, { id })
+          toast.success(`Pemeriksaan seluruh akun selesai, konkurensi: ${data.concurrency || 1}`, { id })
         } else {
-          toast.error("\u5168\u91cf\u5de1\u68c0\u5931\u8d25", { id })
+          toast.error("Pemeriksaan seluruh akun gagal", { id })
         }
         fetchAccounts()
       })
-      .catch(err => toast.error(err instanceof Error ? err.message : "\u5168\u91cf\u5de1\u68c0\u8bf7\u6c42\u5931\u8d25", { id }))
+      .catch(err => toast.error(err instanceof Error ? err.message : "Permintaan pemeriksaan seluruh akun gagal", { id }))
       .finally(() => setVerifyingAll(false))
   }
 
   const handleVerifySelected = async () => {
     if (!requireSessionKey()) return
     if (!selectedAccounts.length) {
-      toast.error("请先选择账号")
+      toast.error("Silakan pilih akun terlebih dahulu")
       return
     }
-    const id = toast.loading(`正在刷新选中 ${selectedAccounts.length} 个账号信息和额度...`)
+    const id = toast.loading(`Memperbarui info dan kuota ${selectedAccounts.length} akun terpilih...`)
     let ok = 0
     let failed = 0
     for (const acc of selectedAccounts) {
@@ -635,28 +637,28 @@ export default function AccountsPage() {
         failed += 1
       }
     }
-    toast.success(`刷新完成：通过 ${ok}，失败 ${failed}`, { id, duration: 8000 })
+    toast.success(`Pembaruan selesai: Berhasil ${ok}, Gagal ${failed}`, { id, duration: 8000 })
     fetchAccounts()
   }
 
   const handleActivate = (targetEmail: string) => {
     if (!requireSessionKey()) return
-    const id = toast.loading(`\u6b63\u5728\u6fc0\u6d3b ${targetEmail}...`)
+    const id = toast.loading(`Mengaktivasi ${targetEmail}...`)
     fetch(`${API_BASE}/api/admin/accounts/${encodeURIComponent(targetEmail)}/activate`, {
       method: "POST",
       headers: getAuthHeader(),
     }).then(readAdminJSON)
       .then(data => {
         if (data.pending) {
-          toast.success(`\u8d26\u53f7\u6b63\u5728\u6fc0\u6d3b\u4e2d\uff0c\u8bf7\u7a0d\u540e\u5237\u65b0\uff1a${targetEmail}`, { id, duration: 6000 })
+          toast.success(`Akun sedang diaktivasi, silakan refresh sebentar lagi: ${targetEmail}`, { id, duration: 6000 })
         } else if (data.ok) {
-          toast.success(data.message || `\u6fc0\u6d3b\u6210\u529f\uff1a${targetEmail}`, { id, duration: 6000 })
+          toast.success(data.message || `Aktivasi berhasil: ${targetEmail}`, { id, duration: 6000 })
         } else {
-          toast.error(`\u6fc0\u6d3b\u5931\u8d25\uff1a${localizeError(data.error || data.message)}`, { id, duration: 8000 })
+          toast.error(`Aktivasi gagal: ${localizeError(data.error || data.message)}`, { id, duration: 8000 })
         }
         fetchAccounts()
       })
-      .catch(err => toast.error(err instanceof Error ? err.message : "\u6fc0\u6d3b\u8bf7\u6c42\u5931\u8d25", { id }))
+      .catch(err => toast.error(err instanceof Error ? err.message : "Permintaan aktivasi gagal", { id }))
   }
 
   const handleImportFile = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -665,18 +667,18 @@ export default function AccountsPage() {
     if (!files.length) return
     const chunks = await Promise.all(files.map(file => file.text()))
     setBulkText(prev => [prev, ...chunks].filter(Boolean).join("\n"))
-    toast.success(`已读取 ${files.length} 个导入文件`)
+    toast.success(`Berhasil membaca ${files.length} file`)
   }
 
   const handleBulkImport = async () => {
     if (!requireSessionKey()) return
     const candidates = parsedBulkAccounts
     if (!candidates.length) {
-      toast.error("没有识别到可导入的 token")
+      toast.error("Tidak ada token yang terdeteksi untuk diimpor")
       return
     }
     setBulkImporting(true)
-    const id = toast.loading(`正在导入 ${candidates.length} 个账号...`)
+    const id = toast.loading(`Mengimpor ${candidates.length} akun...`)
     let ok = 0
     let failed = 0
     try {
@@ -696,11 +698,11 @@ export default function AccountsPage() {
         if (res.ok && data.ok) ok += 1
         else failed += 1
       }
-      toast.success(`账号导入完成：成功 ${ok}，失败 ${failed}`, { id, duration: 8000 })
+      toast.success(`Impor akun selesai: Berhasil ${ok}, Gagal ${failed}`, { id, duration: 8000 })
       fetchAccounts()
       if (ok > 0) setBulkText("")
     } catch (err) {
-      toast.error(`批量导入中断：${err instanceof Error ? err.message : "未知错误"}`, { id })
+      toast.error(`Impor terputus: ${err instanceof Error ? err.message : "Kesalahan tidak diketahui"}`, { id })
     } finally {
       setBulkImporting(false)
     }
@@ -708,28 +710,28 @@ export default function AccountsPage() {
 
   const handleCopyToken = async (acc: AccountItem) => {
     if (!acc.token) {
-      toast.error("该账号没有 token")
+      toast.error("Akun ini tidak memiliki token")
       return
     }
     await navigator.clipboard.writeText(acc.token)
-    toast.success(`已复制 ${acc.email} 的 token`)
+    toast.success(`Token ${acc.email} berhasil disalin`)
   }
 
   const handleEditAccount = async (acc: AccountItem) => {
     if (!requireSessionKey()) return
-    const nextEmail = window.prompt("编辑邮箱", acc.email)
+    const nextEmail = window.prompt("Edit Email", acc.email)
     if (nextEmail === null) return
-    const nextPassword = window.prompt("编辑密码（可留空）", acc.password || "")
+    const nextPassword = window.prompt("Edit Kata Sandi (opsional)", acc.password || "")
     if (nextPassword === null) return
-    const nextUsername = window.prompt("编辑用户名（可留空）", acc.username || "")
+    const nextUsername = window.prompt("Edit Nama Pengguna (opsional)", acc.username || "")
     if (nextUsername === null) return
-    const nextToken = window.prompt("编辑 token", acc.token || "")
+    const nextToken = window.prompt("Edit Token", acc.token || "")
     if (nextToken === null) return
     if (!nextToken.trim()) {
-      toast.error("token 不能为空")
+      toast.error("Token tidak boleh kosong")
       return
     }
-    const id = toast.loading(`正在保存 ${acc.email}...`)
+    const id = toast.loading(`Menyimpan ${acc.email}...`)
     const res = await fetch(`${API_BASE}/api/admin/accounts`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...getAuthHeader() },
@@ -742,12 +744,12 @@ export default function AccountsPage() {
       }),
     }).catch(() => null)
     if (!res) {
-      toast.error("保存账号请求失败", { id })
+      toast.error("Permintaan simpan akun gagal", { id })
       return
     }
     const data = await res.json().catch(() => ({}))
     if (!res.ok || !data.ok) {
-      toast.error(localizeError(data.error) || "保存失败", { id, duration: 8000 })
+      toast.error(localizeError(data.error) || "Gagal menyimpan", { id, duration: 8000 })
       return
     }
     if ((nextEmail.trim() || acc.email) !== acc.email) {
@@ -756,20 +758,20 @@ export default function AccountsPage() {
         headers: getAuthHeader(),
       }).catch(() => null)
     }
-    toast.success("账号已保存", { id })
+    toast.success("Akun berhasil disimpan", { id })
     fetchAccounts()
   }
 
   const exportAccounts = (scope: "all" | "selected", format: "json" | "zip") => {
     const list = scope === "selected" ? selectedAccounts : accounts
     if (!list.length) {
-      toast.error(scope === "selected" ? "请先选择账号" : "没有可导出的账号")
+      toast.error(scope === "selected" ? "Silakan pilih akun terlebih dahulu" : "Tidak ada akun untuk diekspor")
       return
     }
     const stamp = new Date().toISOString().replace(/[:.]/g, "-")
     if (format === "json") {
       downloadJSON(`qwen2api-accounts-${scope}-${stamp}.json`, { accounts: list })
-      toast.success("账号 JSON 已导出")
+      toast.success("File JSON akun berhasil diekspor")
       return
     }
     const entries: ZipEntry[] = [
@@ -777,263 +779,322 @@ export default function AccountsPage() {
       ...list.map(acc => ({ name: `accounts/${safeFileName(acc.email)}.json`, content: JSON.stringify(acc, null, 2) })),
     ]
     downloadBlob(`qwen2api-accounts-${scope}-${stamp}.zip`, zipBlob(entries))
-    toast.success("账号 ZIP 已导出")
+    toast.success("File ZIP akun berhasil diekspor")
   }
 
   return (
     <div className="space-y-6 relative">
       <input ref={importFileInputRef} type="file" accept=".txt,.json,.csv" multiple className="hidden" onChange={handleImportFile} />
 
-      <section className="admin-hero p-6">
-        <div className="relative z-10 space-y-4">
-          <div className="flex flex-col justify-between gap-5 2xl:flex-row 2xl:items-center">
-            <div className="min-w-0">
-              <div className="text-xs font-black uppercase tracking-[0.28em] text-muted-foreground">ACCOUNT POOL</div>
-              <h2 className="mt-2 text-4xl font-black tracking-tight">{"\u53f7\u6c60\u7ba1\u7406"}</h2>
-            </div>
-            <div className="account-action-row 2xl:justify-end">
+      <section className="relative overflow-hidden rounded-[32px] border border-white/75 bg-card/82 p-6 shadow-[var(--shadow-lift)] backdrop-blur-sm">
+        <div className="pointer-events-none absolute -right-16 -top-20 size-56 rounded-full bg-accent/45 blur-3xl" />
+        <div className="relative flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
+          <div>
+            <div className="text-xs font-black uppercase tracking-[0.28em] text-muted-foreground">Account Fleet</div>
+            <h2 className="mt-2 text-4xl font-black tracking-tight">Manajemen Pool Akun</h2>
+            <p className="mt-2 max-w-2xl text-muted-foreground">
+              Kelola pool akun upstream, mendukung penambahan manual, impor file, verifikasi massal, dan pemantauan status.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={() => fetchAccounts(true)}>
-              <RefreshCw className="mr-2 h-4 w-4" /> {"\u5237\u65b0"}
+              <RefreshCw className="mr-2 size-4" /> Segarkan
             </Button>
             <Button variant="outline" onClick={handleVerifyAll} disabled={verifyingAll}>
-              <RotateCw className={`mr-2 h-4 w-4 ${verifyingAll ? "animate-spin" : ""}`} /> {"\u5237\u65b0 GPT \u8d26\u53f7\u4fe1\u606f\u548c\u989d\u5ea6"}
+              <RefreshCw className={`mr-2 size-4 ${verifyingAll ? "animate-spin" : ""}`} /> Segarkan Info & Kuota Akun
             </Button>
-            <Button onClick={() => importFileInputRef.current?.click()} className="bg-black text-white hover:bg-black/85">
-              <Import className="mr-2 h-4 w-4" /> {"\u5bfc\u5165"}
+            <Button variant="outline" onClick={() => importFileInputRef.current?.click()}>
+              <FileUp className="mr-2 size-4" /> Impor
             </Button>
             <Button variant="outline" onClick={() => exportAccounts("all", "json")}>
-              <Download className="mr-2 h-4 w-4" /> {"\u5bfc\u51fa\u5168\u90e8 JSON"}
+              <Download className="mr-2 size-4" /> Ekspor Semua JSON
             </Button>
             <Button variant="outline" onClick={() => exportAccounts("all", "zip")}>
-              <Download className="mr-2 h-4 w-4" /> {"\u5bfc\u51fa\u5168\u90e8 ZIP"}
+              <FolderArchive className="mr-2 size-4" /> Ekspor Semua ZIP
             </Button>
-            </div>
           </div>
-          <p className="text-muted-foreground">{"\u7edf\u4e00\u7ba1\u7406\u4e0a\u6e38\u8d26\u53f7\u6c60\uff0c\u652f\u6301\u624b\u52a8\u6ce8\u5165\u3001\u6587\u4ef6\u5bfc\u5165\u3001\u6279\u91cf\u5de1\u68c0\u4e0e\u8fd0\u884c\u72b6\u6001\u8bc6\u522b\u3002"}</p>
         </div>
       </section>
 
-      <div className="account-stat-row">
-        <MetricCard icon={<UserRound className="size-5" />} label="账号总数" value={stats.total} />
-        <MetricCard icon={<CheckCircle2 className="size-5" />} label="正常账户" value={stats.valid} tone="emerald" />
-        <MetricCard icon={<ShieldAlert className="size-5" />} label="能力限额" value={stats.rateLimited} tone="orange" />
-        <MetricCard icon={<XCircle className="size-5" />} label="异常账户" value={stats.abnormal} tone="rose" />
-        <MetricCard icon={<Ban className="size-5" />} label="禁用账户" value={stats.banned} />
-        <MetricCard icon={<RotateCw className="size-5" />} label="媒体额度" value={stats.quota} tone="blue" />
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        <MetricCard icon={<UserRound className="size-5" />} label="Total Akun" value={stats.total} tone="neutral" />
+        <MetricCard icon={<CheckCircle2 className="size-5" />} label="Akun Normal" value={stats.valid} tone="emerald" />
+        <MetricCard icon={<ShieldAlert className="size-5" />} label="Rate Limit" value={stats.rateLimited} tone="orange" />
+        <MetricCard icon={<XCircle className="size-5" />} label="Akun Bermasalah" value={stats.abnormal} tone="rose" />
+        <MetricCard icon={<Ban className="size-5" />} label="Akun Diblokir" value={stats.banned} tone="neutral" />
+        <MetricCard icon={<RotateCw className="size-5" />} label="Kuota Media" value={stats.quota} tone="blue" />
       </div>
-      <p className="text-sm text-muted-foreground">
-        所有有效账号都可参与对话、图片和视频生成；图片限额、视频限额、对话限流按能力单独记录，互不影响。媒体额度字段仅展示上游返回的数据，没有专用字段时显示为 0。
+      <p className="text-xs text-muted-foreground">
+        Semua akun valid dapat digunakan untuk chat, gambar, dan video. Limitasi kuota gambar, video, dan chat dicatat terpisah. Kuota media menampilkan data dari upstream (0 jika tidak ada data spesifik).
       </p>
 
-      <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
-        <div className="rounded-[30px] border border-white/75 bg-card/86 p-6 shadow-[var(--shadow-lift)] space-y-4">
-          <div>
-            <h3 className="text-base font-bold">{"\u624b\u52a8\u6ce8\u5165\u8d26\u53f7"}</h3>
-            <p className="text-sm text-muted-foreground">{"\u8bf7\u5148\u5728 chat.qwen.ai \u767b\u5f55\uff0c\u7136\u540e\u6309 F12 \u6253\u5f00\u5f00\u53d1\u8005\u5de5\u5177\uff0c\u5728 Application / Storage \u91cc\u7684 Local Storage / \u672c\u5730\u5b58\u50a8 \u4e2d\u627e\u5230 token \u5e76\u76f4\u63a5\u590d\u5236\u5b8c\u6574\u539f\u59cb\u503c\u7c98\u8d34\u5230\u4e0b\u65b9\u8f93\u5165\u6846\u3002"}</p>
-            <div className="rounded-xl border border-orange-500/30 bg-orange-500/10 p-3 mt-3">
-              <p className="text-sm font-semibold text-orange-700 dark:text-orange-300">{"\u91cd\u8981\uff1a\u8bf7\u53ea\u7c98\u8d34 Local Storage / \u672c\u5730\u5b58\u50a8 \u91cc\u7684 token \u539f\u59cb\u503c\uff0c\u4e0d\u8981\u4ece Network \u8bf7\u6c42\u6216 Authorization \u8bf7\u6c42\u5934\u4e2d\u63d0\u53d6\u3002"}</p>
-              <p className="text-xs text-orange-700/80 dark:text-orange-200/80 mt-1">{"\u8bf7\u4e0d\u8981\u5e26 Bearer \u524d\u7f00\uff0c\u4e5f\u4e0d\u8981\u7c98\u8d34\u6574\u6bb5 Authorization \u6587\u672c\u3002\u90ae\u7bb1\u548c\u5bc6\u7801\u53ef\u4ee5\u4e0d\u586b\uff0c\u7cfb\u7edf\u4f1a\u5728\u6ce8\u5165\u524d\u5148\u9a8c\u8bc1 token \u662f\u5426\u6709\u6548\u3002"}</p>
-            </div>
+      <div className="grid gap-6 xl:grid-cols-2">
+        <section className="rounded-[30px] border border-white/75 bg-card/86 p-6 shadow-[var(--shadow-lift)]">
+          <div className="mb-4">
+            <h3 className="text-xl font-black tracking-tight">Tambah Akun Qwen</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Pilih salah satu metode: <strong>Metode 1 (Rekomendasi)</strong>: Masukkan <strong>Email & Kata Sandi</strong> Qwen untuk login otomatis via protokol Android resmi (bebas blokir Captcha WAF). <strong>Metode 2</strong>: Tempel <strong>Token manual</strong> dari Local Storage browser jika Anda login via Google/OAuth.
+            </p>
+            <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+              Tips: Jika akun didaftarkan dengan Email & Kata Sandi, cukup isi Email dan Sandi di bawah tanpa perlu menyalin Token dari browser.
+            </p>
           </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="md:col-span-2">
-              <label className="text-xs font-semibold mb-1.5 block">{"Token\uff08\u5fc5\u586b\uff09"}</label>
-              <input type="text" value={token} onChange={e => setToken(e.target.value)} className="admin-input flex h-10 w-full px-3 py-2 text-sm" placeholder={"\u7c98\u8d34\u4ece Local Storage / \u672c\u5730\u5b58\u50a8 \u76f4\u63a5\u590d\u5236\u7684 token"} />
+          <div className="grid gap-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs font-bold uppercase tracking-wider text-muted-foreground">Email</label>
+                <input
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  placeholder="user@example.com"
+                  className="w-full rounded-2xl border bg-background px-4 py-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary/20"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-bold uppercase tracking-wider text-muted-foreground">Kata Sandi</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  placeholder="Kata sandi akun Qwen"
+                  className="w-full rounded-2xl border bg-background px-4 py-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary/20"
+                />
+              </div>
             </div>
             <div>
-              <label className="text-xs font-semibold mb-1.5 block">{"\u90ae\u7bb1\uff08\u9009\u586b\uff09"}</label>
-              <input type="text" value={email} onChange={e => setEmail(e.target.value)} className="admin-input flex h-10 w-full px-3 py-2 text-sm" placeholder={"\u90ae\u7bb1\u5730\u5740"} />
+              <label className="mb-1 block text-xs font-bold uppercase tracking-wider text-muted-foreground">Atau Tempel Token Manual (Opsional)</label>
+              <input
+                value={token}
+                onChange={e => setToken(e.target.value)}
+                placeholder="Tempel token dari Local Storage (jika tidak menggunakan Email & Sandi)"
+                className="w-full rounded-2xl border bg-background px-4 py-2.5 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-primary/20"
+              />
             </div>
-            <div>
-              <label className="text-xs font-semibold mb-1.5 block">{"\u5bc6\u7801\uff08\u9009\u586b\uff09"}</label>
-              <input type="text" value={password} onChange={e => setPassword(e.target.value)} className="admin-input flex h-10 w-full px-3 py-2 text-sm" placeholder={"\u7528\u4e8e\u81ea\u52a8\u5237\u65b0\u6216\u6fc0\u6d3b"} />
+            <div className="flex justify-end pt-1">
+              <Button onClick={handleAdd}>
+                <Plus className="mr-2 size-4" /> Simpan / Login Akun
+              </Button>
             </div>
           </div>
-          <Button onClick={handleAdd} variant="secondary" className="h-10 w-full font-semibold">
-            <Plus className="mr-2 h-4 w-4" /> {"\u6ce8\u5165\u8d26\u53f7"}
-          </Button>
-        </div>
+        </section>
 
-        <div className="rounded-[30px] border border-white/75 bg-card/86 p-6 shadow-[var(--shadow-lift)] space-y-4">
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-            <div className="min-w-0">
-              <h3 className="text-base font-bold">{"\u6279\u91cf\u5bfc\u5165"}</h3>
-              <p className="text-sm text-muted-foreground">支持多行 token、`email,token`、JSON 对象、JSON 数组或 webchat2api/CPA 风格的嵌套 `accounts/items/data`。</p>
+        <section className="rounded-[30px] border border-white/75 bg-card/86 p-6 shadow-[var(--shadow-lift)]">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-xl font-black tracking-tight">Impor Massal</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Mendukung format multi-baris token, 'email,token', objek/array JSON, atau format nested accounts/items/data.
+              </p>
             </div>
-            <label className="inline-flex h-11 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-full border bg-background/70 px-4 text-sm font-bold shadow-sm">
-              <FileUp className="size-4" />
-              读文件
-              <input type="file" accept=".txt,.json,.csv" multiple className="hidden" onChange={handleImportFile} />
-            </label>
+            <Button variant="outline" size="sm" onClick={() => importFileInputRef.current?.click()}>
+              <FileUp className="mr-2 size-4" /> Pilih File
+            </Button>
           </div>
           <textarea
             value={bulkText}
             onChange={e => setBulkText(e.target.value)}
-            className="admin-input min-h-44 w-full resize-y px-4 py-3 text-sm"
-            placeholder={"每行一个 token，或粘贴 JSON：[{\"email\":\"a@qwen\",\"token\":\"...\"}]"}
-            disabled={bulkImporting}
+            rows={5}
+            placeholder={`Satu token per baris, atau format JSON: [{"email":"a@qwen","token":"..."}]`}
+            className="w-full rounded-2xl border bg-background p-3 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
-          <div className="flex flex-col gap-3 rounded-2xl border border-white/75 bg-background/55 px-3 py-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="text-sm text-muted-foreground">已识别 <span className="font-black text-foreground">{parsedBulkAccounts.length}</span> 个候选账号</div>
-            <div className="flex flex-nowrap gap-2">
-              <Button variant="ghost" onClick={() => setBulkText("")} disabled={!bulkText || bulkImporting}>清空</Button>
-              <Button onClick={handleBulkImport} disabled={!parsedBulkAccounts.length || bulkImporting}>
-                {bulkImporting ? <RefreshCw className="mr-2 size-4 animate-spin" /> : <UploadCloud className="mr-2 size-4" />}
-                导入账号
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
+            <span>
+              Terdeteksi <span className="font-black text-foreground">{parsedBulkAccounts.length}</span> kandidat akun
+            </span>
+            <div className="flex gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setBulkText("")} disabled={!bulkText}>
+                Bersihkan
+              </Button>
+              <Button size="sm" onClick={handleBulkImport} disabled={bulkImporting || parsedBulkAccounts.length === 0}>
+                {bulkImporting ? <RefreshCw className="mr-2 size-3 animate-spin" /> : <Plus className="mr-2 size-3" />}
+                Impor Akun
               </Button>
             </div>
           </div>
-        </div>
+        </section>
       </div>
 
-      <div className="flex flex-col justify-between gap-4 pt-2 xl:flex-row xl:items-start">
-        <div className="flex shrink-0 items-center gap-3">
-          <h3 className="text-2xl font-black">账户列表</h3>
-          <span className="inline-flex items-center justify-center rounded-full bg-muted px-3 py-1 text-xs font-black">{filteredAccounts.length}</span>
-        </div>
-        <div className="account-filter-row xl:justify-end">
-          <div className="flex h-11 min-w-[260px] items-center gap-2 rounded-2xl border border-white/75 bg-card/80 px-3 shadow-sm">
-            <Search className="size-4 text-muted-foreground" />
-            <input value={query} onChange={e => setQuery(e.target.value)} className="min-w-0 flex-1 bg-transparent text-sm outline-none" placeholder="搜索邮箱" />
+      <section className="overflow-hidden rounded-[30px] border border-white/75 bg-card/86 shadow-[var(--shadow-lift)]">
+        <div className="flex flex-col gap-4 border-b border-border/50 bg-muted/10 p-5 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h3 className="text-xl font-black tracking-tight">Daftar Akun</h3>
+            <p className="text-sm text-muted-foreground">Menampilkan {filteredAccounts.length} / {accounts.length} akun</p>
           </div>
-          <select value={serviceFilter} onChange={e => setServiceFilter(e.target.value)} className="h-11 rounded-2xl border border-white/75 bg-card/80 px-4 text-sm shadow-sm outline-none">
-            <option value="all">全部服务</option>
-            {serviceOptions.map(item => <option key={item} value={item}>{item}</option>)}
-          </select>
-          <select value={planFilter} onChange={e => setPlanFilter(e.target.value)} className="h-11 rounded-2xl border border-white/75 bg-card/80 px-4 text-sm shadow-sm outline-none">
-            <option value="all">全部计划/池</option>
-            {planOptions.map(item => <option key={item} value={item}>{item}</option>)}
-          </select>
-          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="h-11 rounded-2xl border border-white/75 bg-card/80 px-4 text-sm shadow-sm outline-none">
-            <option value="all">全部状态</option>
-            <option value="valid">正常</option>
-            <option value="pending_activation">未激活</option>
-            <option value="rate_limited">限流</option>
-            <option value="banned">封禁</option>
-            <option value="auth_error">认证失效</option>
-          </select>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative min-w-[220px]">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <input
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                placeholder="Cari email / username..."
+                className="w-full rounded-2xl border bg-background py-2 pl-9 pr-4 text-xs focus:outline-none focus:ring-2 focus:ring-primary/20"
+              />
+            </div>
+            <select value={serviceFilter} onChange={e => setServiceFilter(e.target.value)} className="rounded-2xl border bg-background px-3 py-2 text-xs">
+              <option value="all">Semua Layanan</option>
+              {serviceOptions.map(item => <option key={item} value={item}>{item}</option>)}
+            </select>
+            <select value={planFilter} onChange={e => setPlanFilter(e.target.value)} className="rounded-2xl border bg-background px-3 py-2 text-xs">
+              <option value="all">Semua Paket / Pool</option>
+              {planOptions.map(item => <option key={item} value={item}>{item}</option>)}
+            </select>
+            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="rounded-2xl border bg-background px-3 py-2 text-xs">
+              <option value="all">Semua Status</option>
+              <option value="valid">Normal</option>
+              <option value="pending_activation">Belum Aktivasi</option>
+              <option value="rate_limited">Rate Limit</option>
+              <option value="banned">Diblokir</option>
+              <option value="auth_error">Autentikasi Gagal</option>
+            </select>
+          </div>
         </div>
-      </div>
 
-      <div className="overflow-hidden rounded-[30px] border border-white/75 bg-card/86 shadow-[var(--shadow-lift)]">
-        <div className="flex flex-col gap-3 border-b border-border/50 px-5 py-4 text-sm xl:flex-row xl:items-center xl:justify-between">
-          <Button variant="ghost" size="sm" onClick={handleDeleteAbnormal} disabled={!accounts.some(acc => acc.status_code !== "valid" && !acc.valid)} className="text-rose-600 hover:text-rose-600">
-            <Trash2 className="mr-2 size-4" /> 移除异常账号
-          </Button>
-          <div className="account-selected-action-row xl:justify-end">
-            <span className="rounded-full bg-muted px-3 py-1 text-xs font-bold text-muted-foreground">已选 {selectedAccounts.length}</span>
-            <Button variant="ghost" size="sm" onClick={handleVerifySelected} disabled={!selectedAccounts.length}>
-              <RefreshCw className="mr-2 size-4" /> 刷新选中 GPT 账号信息和额度
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/50 bg-background/60 px-5 py-3 text-xs">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" size="sm" onClick={handleDeleteAbnormal}>
+              <Trash2 className="mr-1.5 size-3 text-rose-500" /> Hapus Akun Bermasalah
             </Button>
-            <Button variant="ghost" size="sm" onClick={handleDeleteSelected} disabled={!selectedAccounts.length} className="text-rose-600 hover:text-rose-600">
-              <Trash2 className="mr-2 size-4" /> 删除所选
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => exportAccounts("selected", "json")} disabled={!selectedAccounts.length}>
-              <Download className="mr-2 size-4" /> 导出所选 JSON
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => exportAccounts("selected", "zip")} disabled={!selectedAccounts.length}>
-              <Download className="mr-2 size-4" /> 导出所选 ZIP
-            </Button>
+            {selectedAccounts.length > 0 && (
+              <>
+                <span className="font-bold text-foreground">Dipilih {selectedAccounts.length}</span>
+                <Button variant="outline" size="sm" onClick={handleVerifySelected}>
+                  <RefreshCw className="mr-1.5 size-3" /> Segarkan Akun Terpilih
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleDeleteSelected} className="text-rose-600 hover:text-rose-700">
+                  <Trash2 className="mr-1.5 size-3" /> Hapus Terpilih
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => exportAccounts("selected", "json")}>
+                  <Download className="mr-1.5 size-3" /> Ekspor JSON Terpilih
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => exportAccounts("selected", "zip")}>
+                  <FolderArchive className="mr-1.5 size-3" /> Ekspor ZIP Terpilih
+                </Button>
+              </>
+            )}
           </div>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1280px] text-left text-sm">
-            <thead className="border-b bg-muted/25 text-xs uppercase tracking-wider text-muted-foreground">
+          <table className="w-full min-w-[980px] text-left text-xs">
+            <thead className="border-b bg-muted/20 text-muted-foreground">
               <tr>
-                <th className="w-14 px-5 py-4">
-                  <input type="checkbox" checked={allFilteredSelected} onChange={toggleAllFiltered} aria-label="选择全部筛选账号" />
+                <th className="w-10 px-4 py-3">
+                  <input type="checkbox" checked={allFilteredSelected} onChange={toggleAllFiltered} className="rounded" />
                 </th>
-                <th className="px-4 py-4 font-bold">TOKEN</th>
-                <th className="px-4 py-4 font-bold">服务商</th>
-                <th className="px-4 py-4 font-bold">计划 / 池</th>
-                <th className="px-4 py-4 font-bold">状态</th>
-                <th className="px-4 py-4 font-bold">账号信息</th>
-                <th className="px-4 py-4 font-bold">媒体额度</th>
-                <th className="px-4 py-4 font-bold">限额 / 恢复</th>
-                <th className="px-4 py-4 text-right font-bold">成功</th>
-                <th className="px-4 py-4 text-right font-bold">失败</th>
-                <th className="px-5 py-4 text-right font-bold">操作</th>
+                <th className="px-3 py-3 font-bold">TOKEN</th>
+                <th className="px-3 py-3 font-bold">Penyedia</th>
+                <th className="px-3 py-3 font-bold">Paket / Pool</th>
+                <th className="px-3 py-3 font-bold">Status</th>
+                <th className="px-4 py-3 font-bold">Informasi Akun</th>
+                <th className="px-3 py-3 font-bold">Kuota Media</th>
+                <th className="px-3 py-3 font-bold">Batas / Pemulihan</th>
+                <th className="px-3 py-3 font-bold">Sukses</th>
+                <th className="px-3 py-3 font-bold">Gagal</th>
+                <th className="px-4 py-3 text-right font-bold">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/50">
-              {filteredAccounts.length === 0 && (
+              {filteredAccounts.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="px-6 py-12 text-center text-muted-foreground">{"\u6ca1\u6709\u5339\u914d\u7684\u8d26\u53f7\uff0c\u8bf7\u8c03\u6574\u7b5b\u9009\u6216\u5bfc\u5165\u65b0 token\u3002"}</td>
+                  <td colSpan={11} className="py-12 text-center text-muted-foreground">
+                    Tidak ada akun yang cocok. Silakan sesuaikan filter atau tambahkan token baru.
+                  </td>
                 </tr>
+              ) : (
+                filteredAccounts.map(acc => {
+                  const isChecked = selected.has(acc.email)
+                  const isTargetVerifying = verifying === acc.email
+                  const limits = activeRateLimits(acc)
+                  return (
+                    <tr key={acc.email} className={`transition hover:bg-black/5 dark:hover:bg-white/5 ${isChecked ? "bg-primary/5" : ""}`}>
+                      <td className="px-4 py-3">
+                        <input type="checkbox" checked={isChecked} onChange={() => toggleSelected(acc.email)} className="rounded" />
+                      </td>
+                      <td className="px-3 py-3">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono text-[11px] text-muted-foreground">{maskedToken(acc.token)}</span>
+                          <button
+                            type="button"
+                            onClick={() => void handleCopyToken(acc)}
+                            className="text-muted-foreground hover:text-foreground"
+                            title="Salin token"
+                          >
+                            <Copy className="size-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                      <td className="px-3 py-3 font-medium text-foreground">{serviceOf(acc)}</td>
+                      <td className="px-3 py-3 font-medium text-foreground">{planOf(acc)}</td>
+                      <td className="px-3 py-3">
+                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-bold ${statusStyle(effectiveStatusCode(acc))}`}>
+                          {statusText(acc)}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-col gap-0.5">
+                          <div className="font-bold text-foreground">{acc.email}</div>
+                          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                            <span>{acc.username || "qwen-user"}</span>
+                            {acc.source === "env" && (
+                              <span className="rounded-full bg-emerald-500/10 px-1.5 py-0.2 text-[10px] font-bold text-emerald-600">
+                                Environment Variable
+                              </span>
+                            )}
+                          </div>
+                          {limits.length > 0 ? (
+                            <div className="flex flex-wrap gap-1 pt-1">
+                              {limits.map(limit => (
+                                <span
+                                  key={limit.usage}
+                                  className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300"
+                                  title={limit.error || undefined}
+                                >
+                                  {limit.label}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="text-[10px] text-muted-foreground/80">
+                              Akun aktif dapat digunakan untuk chat, gambar, dan video.
+                            </div>
+                          )}
+                          {statusNote(acc) && (
+                            <div className="max-w-[280px] truncate text-[10px] text-muted-foreground" title={statusNote(acc)}>
+                              {statusNote(acc)}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-3 py-3 font-mono">{quotaOf(acc)}</td>
+                      <td className="px-3 py-3 text-muted-foreground">{recoveryText(acc)}</td>
+                      <td className="px-3 py-3 font-mono text-emerald-600 dark:text-emerald-400">{successOf(acc)}</td>
+                      <td className="px-3 py-3 font-mono text-rose-600 dark:text-rose-400">{failureOf(acc)}</td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex justify-end gap-1">
+                          {acc.status_code === "pending_activation" && (
+                            <Button size="icon" variant="ghost" className="size-7" onClick={() => handleActivate(acc.email)} title="Aktivasi">
+                              <Zap className="size-3.5 text-amber-500" />
+                            </Button>
+                          )}
+                          <Button size="icon" variant="ghost" className="size-7" onClick={() => void handleEditAccount(acc)} title="Edit">
+                            <Pencil className="size-3.5" />
+                          </Button>
+                          <Button size="icon" variant="ghost" className="size-7" onClick={() => handleVerify(acc.email)} disabled={isTargetVerifying} title="Segarkan / Verifikasi">
+                            <RefreshCw className={`size-3.5 ${isTargetVerifying ? "animate-spin" : ""}`} />
+                          </Button>
+                          <Button size="icon" variant="ghost" className="size-7 text-rose-500 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/30" onClick={() => handleDelete(acc)} disabled={acc.source === "env"} title={acc.source === "env" ? "Hapus dari file .env" : "Hapus"}>
+                            <Trash2 className="size-3.5" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })
               )}
-              {filteredAccounts.map(acc => (
-                <tr key={acc.email} className="transition-colors hover:bg-black/5 dark:hover:bg-white/5">
-                  <td className="px-5 py-4 align-middle">
-                    <input type="checkbox" checked={selected.has(acc.email)} onChange={() => toggleSelected(acc.email)} aria-label={`选择 ${acc.email}`} />
-                  </td>
-                  <td className="px-4 py-4 align-middle">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <span className="max-w-[260px] truncate font-mono text-xs text-foreground/80">{maskedToken(acc.token)}</span>
-                      <button type="button" onClick={() => handleCopyToken(acc)} className="rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground" title="复制 token">
-                        <Clipboard className="size-4" />
-                      </button>
-                    </div>
-                  </td>
-                  <td className="px-4 py-4 align-middle">
-                    <span className="inline-flex rounded-full border bg-background/75 px-3 py-1 text-xs font-black">{serviceOf(acc)}</span>
-                  </td>
-                  <td className="px-4 py-4 align-middle">
-                    <div className="font-mono text-sm">{planOf(acc)}</div>
-                    <div className="text-xs text-muted-foreground">{serviceOf(acc)} 套餐</div>
-                  </td>
-                  <td className="px-4 py-4 align-middle">
-                    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-bold ring-1 ${statusStyle(effectiveStatusCode(acc))}`}>
-                      <CheckCircle2 className="mr-1 size-3.5" />
-                      {statusText(acc)}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4 align-middle">
-                    <div className="max-w-[280px] truncate font-mono text-sm text-foreground/90" title={acc.email}>{acc.email}</div>
-                    {acc.source === "env" && (
-                      <div className="mt-1 inline-flex w-fit items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-bold text-emerald-700 dark:text-emerald-300" title={acc.env_name || "环境变量"}>
-                        <Lock className="size-3" /> 环境变量注入
-                      </div>
-                    )}
-                    <div className="max-w-[280px] truncate text-xs text-muted-foreground" title={statusNote(acc)}>
-                      {acc.username || "所有有效账号均可参与对话、图片和视频生成。"}
-                    </div>
-                  </td>
-                  <td className="px-4 py-4 align-middle">
-                    <span className="inline-flex rounded-full border border-sky-400/40 bg-sky-500/10 px-3 py-1 font-mono text-sm font-bold text-sky-700 dark:text-sky-300">
-                      {quotaOf(acc)}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4 align-middle">
-                    <div className="text-sm">{recoveryText(acc)}</div>
-                    <div className="max-w-[220px] truncate text-xs text-muted-foreground" title={statusNote(acc)}>{statusNote(acc) || "-"}</div>
-                  </td>
-                  <td className="px-4 py-4 text-right align-middle font-mono">{successOf(acc)}</td>
-                  <td className="px-4 py-4 text-right align-middle font-mono">{failureOf(acc)}</td>
-                  <td className="px-5 py-4 align-middle text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      {effectiveStatusCode(acc) !== "valid" && effectiveStatusCode(acc) !== "rate_limited" && effectiveStatusCode(acc) !== "banned" && (
-                        <IconButton title="激活" onClick={() => handleActivate(acc.email)}>
-                          <MailWarning className="size-4" />
-                        </IconButton>
-                      )}
-                      <IconButton title="编辑" onClick={() => void handleEditAccount(acc)}>
-                        <Edit3 className="size-4" />
-                      </IconButton>
-                      <IconButton title="刷新 / 验证" onClick={() => handleVerify(acc.email)} disabled={verifying === acc.email}>
-                        {verifying === acc.email ? <RefreshCw className="size-4 animate-spin" /> : <RotateCw className="size-4" />}
-                      </IconButton>
-                      <IconButton title={acc.source === "env" ? "环境变量账号需要从环境变量中移除" : "删除"} onClick={() => handleDelete(acc)} disabled={acc.source === "env"} danger>
-                        <Trash2 className="size-4" />
-                      </IconButton>
-                    </div>
-                  </td>
-                </tr>
-              ))}
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
     </div>
   )
 }
@@ -1054,21 +1115,5 @@ function MetricCard({ icon, label, value, tone = "neutral" }: { icon: ReactNode;
       </div>
       <div className={`mt-5 text-4xl font-black tracking-tight ${toneClass}`}>{value}</div>
     </div>
-  )
-}
-
-function IconButton({ children, title, onClick, disabled, danger }: { children: ReactNode; title: string; onClick: () => void; disabled?: boolean; danger?: boolean }) {
-  return (
-    <button
-      type="button"
-      title={title}
-      disabled={disabled}
-      onClick={onClick}
-      className={`inline-grid size-9 place-items-center rounded-xl border border-transparent text-muted-foreground transition hover:border-white/75 hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-45 ${
-        danger ? "hover:text-rose-600" : ""
-      }`}
-    >
-      {children}
-    </button>
   )
 }

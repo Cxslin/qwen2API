@@ -83,7 +83,7 @@ export default function Dashboard() {
         setStatus(await res.json())
       } catch {
         if (!errOnce) {
-          toast.error("状态获取失败，请在「系统设置」检查当前会话 Key。")
+          toast.error("Gagal mengambil status, silakan periksa Kunci Sesi di menu Pengaturan Sistem.")
           setErrOnce(true)
         }
       }
@@ -106,9 +106,9 @@ export default function Dashboard() {
         <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <div className="text-xs font-black uppercase tracking-[0.28em] text-muted-foreground">Runtime Overview</div>
-            <h2 className="mt-2 text-4xl font-black tracking-tight">运行总览</h2>
+            <h2 className="mt-2 text-4xl font-black tracking-tight">Ringkasan Sistem</h2>
             <p className="mt-2 max-w-3xl text-muted-foreground">
-              Go 后端直连 HTTP 请求链路、账号池并发、接口族和浏览器自动化能力统一展示，每 3 秒自动刷新。
+              Alur permintaan HTTP backend Go, konkurensi pool akun, kumpulan API, dan otomatisasi browser. Refresh otomatis tiap 3 detik.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -120,49 +120,49 @@ export default function Dashboard() {
       </section>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard icon={<Server className="size-5" />} title="可用账号" value={String(acc.valid ?? 0)} sub={`共 ${acc.total ?? 0} 个`} tone="emerald" />
-        <StatCard icon={<Activity className="size-5" />} title="当前并发" value={String(acc.in_use ?? 0)} sub={`全局上限 ${acc.global_in_use ?? 0}`} tone="blue" />
-        <StatCard icon={<ShieldAlert className="size-5" />} title="排队请求" value={String(acc.waiting ?? 0)} sub={`队列上限 ${acc.max_queue_size ?? 0}`} tone="rose" />
-        <StatCard icon={<ActivityIcon className="size-5" />} title="限流 / 失效" value={`${acc.rate_limited ?? 0} / ${acc.invalid ?? 0}`} sub={`单号并发 ${acc.max_inflight_per_account ?? 0}`} tone="orange" />
+        <StatCard icon={<Server className="size-5" />} title="Akun Valid" value={String(acc.valid ?? 0)} sub={`Total ${acc.total ?? 0} akun`} tone="emerald" />
+        <StatCard icon={<Activity className="size-5" />} title="Konkurensi Saat Ini" value={String(acc.in_use ?? 0)} sub={`Batas global ${acc.global_in_use ?? 0}`} tone="blue" />
+        <StatCard icon={<ShieldAlert className="size-5" />} title="Permintaan Antrean" value={String(acc.waiting ?? 0)} sub={`Batas antrean ${acc.max_queue_size ?? 0}`} tone="rose" />
+        <StatCard icon={<ActivityIcon className="size-5" />} title="Rate Limit / Gagal" value={`${acc.rate_limited ?? 0} / ${acc.invalid ?? 0}`} sub={`Maks per akun ${acc.max_inflight_per_account ?? 0}`} tone="orange" />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
         <InfoCard
           icon={<Flame className="size-5" />}
-          title="Chat_ID 预热池"
+          title="Pool Pre-warm Chat_ID"
           value={String(pool?.total_cached ?? 0)}
-          description={pool ? `每账号目标 ${pool.target_per_account}，TTL ${Math.round((pool.ttl_seconds || 0) / 60)} 分钟` : "Go 后端当前未启用预热池"}
+          description={pool ? `Target per akun ${pool.target_per_account} ID, TTL ${Math.round((pool.ttl_seconds || 0) / 60)} menit` : "Pool pre-warm backend Go belum aktif"}
         />
         <InfoCard
           icon={<GaugeCircle className="size-5" />}
-          title="请求运行时"
+          title="Runtime Permintaan"
           value={requestRuntime?.mode || "direct_http"}
-          description={requestRuntime?.description || "普通接口请求由 Go 后端直连上游 HTTP，不依赖浏览器。"}
+          description="Permintaan API reguler terhubung langsung ke HTTP upstream tanpa browser."
         />
         <InfoCard
           icon={<RadioTower className="size-5" />}
-          title="浏览器自动化"
+          title="Otomatisasi Browser"
           value={browserRuntime?.mode || "playwright"}
-          description={browserRuntime?.description || "邮箱激活流程使用 Playwright 自动化，接口请求不走浏览器。"}
+          description="Aktivasi email menggunakan otomatisasi Playwright, request API tidak melalui browser."
         />
       </div>
 
       {rows.length > 0 && (
         <section className="overflow-hidden rounded-[30px] border border-white/75 bg-card/86 shadow-[var(--shadow-lift)]">
           <div className="flex flex-col gap-1 border-b border-border/50 bg-muted/10 px-6 py-5">
-            <h3 className="text-xl font-black tracking-tight">账号并发详情</h3>
-            <p className="text-sm text-muted-foreground">核对每个上游账号的在途请求、失败计数和限流计数。</p>
+            <h3 className="text-xl font-black tracking-tight">Detail Konkurensi Akun</h3>
+            <p className="text-sm text-muted-foreground">Pantau permintaan in-flight, kegagalan berulang, dan rate limit setiap akun upstream.</p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[860px] text-left text-sm">
               <thead className="border-b bg-muted/25 text-xs uppercase tracking-wider text-muted-foreground">
                 <tr>
-                  <th className="px-6 py-3 font-bold">邮箱</th>
-                  <th className="px-4 py-3 font-bold">状态</th>
-                  <th className="px-4 py-3 text-right font-bold">在途</th>
-                  <th className="px-4 py-3 text-right font-bold">预热 chat_id</th>
-                  <th className="px-4 py-3 text-right font-bold">连失</th>
-                  <th className="px-4 py-3 text-right font-bold">限流次</th>
+                  <th className="px-6 py-3 font-bold">Email</th>
+                  <th className="px-4 py-3 font-bold">Status</th>
+                  <th className="px-4 py-3 text-right font-bold">In-flight</th>
+                  <th className="px-4 py-3 text-right font-bold">Pre-warm chat_id</th>
+                  <th className="px-4 py-3 text-right font-bold">Gagal Berturut</th>
+                  <th className="px-4 py-3 text-right font-bold">Rate Limit</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/50">
@@ -191,8 +191,8 @@ export default function Dashboard() {
 
       <section className="overflow-hidden rounded-[30px] border border-white/75 bg-card/86 shadow-[var(--shadow-lift)]">
         <div className="border-b border-border/50 bg-muted/10 px-6 py-5">
-          <h3 className="text-xl font-black tracking-tight">API 接口池</h3>
-          <p className="text-sm text-muted-foreground">当前 Go router 暴露的协议兼容入口。</p>
+          <h3 className="text-xl font-black tracking-tight">Kumpulan API Endpoint</h3>
+          <p className="text-sm text-muted-foreground">Daftar kompatibilitas protokol yang diekspos oleh router Go.</p>
         </div>
         <div className="divide-y divide-border/50">
           {endpointRows.map(item => (

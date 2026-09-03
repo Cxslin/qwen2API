@@ -11,7 +11,7 @@ __pycache__/
 *.so
 
 # Data and Logs
-data/*.json
+data/
 logs/
 legacy/
 *legacy*.py
@@ -54,3 +54,6 @@ openclaw_tool_stress_sandbox*/
 Hermes/
 工具链长任务ifacts/
 qwen.mjs
+
+generate_*.py
+created_accounts.json

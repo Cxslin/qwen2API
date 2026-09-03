@@ -635,12 +635,130 @@ func extractInlineFilePayload(block map[string]any) (string, string, []byte, boo
 	return "", "", nil, false, nil
 }
 
+var (
+	fileMentionRegex = regexp.MustCompile(`@(?:["']([^"']+)["']|([^\s\n` + "`" + `'"]+))`)
+	filePathRegex    = regexp.MustCompile(`(?:file://)?(/(?:storage|sdcard|data|root|home|tmp|etc|var|usr)/[^\s\n` + "`" + `'"]+)`)
+)
+
+func cleanCandidatePath(p string) string {
+	p = strings.TrimPrefix(p, "file://")
+	p = strings.Trim(p, `"'`+"`"+"()[]{}<>,;!?:")
+	return strings.TrimSpace(p)
+}
+
+func findPotentialLocalFiles(text string) []string {
+	if text == "" {
+		return nil
+	}
+	var candidates []string
+	seen := map[string]bool{}
+
+	for _, m := range fileMentionRegex.FindAllStringSubmatch(text, -1) {
+		p := cleanCandidatePath(firstNonEmpty(m[1], m[2]))
+		if p != "" && !seen[p] {
+			seen[p] = true
+			candidates = append(candidates, p)
+		}
+	}
+
+	for _, m := range filePathRegex.FindAllStringSubmatch(text, -1) {
+		p := cleanCandidatePath(m[1])
+		if p != "" && !seen[p] {
+			seen[p] = true
+			candidates = append(candidates, p)
+		}
+	}
+
+	return candidates
+}
+
+func resolveExistingLocalPath(candidate string, workspaceRoot string) string {
+	if candidate == "" {
+		return ""
+	}
+	if info, err := os.Stat(candidate); err == nil && !info.IsDir() && info.Size() > 0 && info.Size() <= 100*1024*1024 {
+		return candidate
+	}
+	if workspaceRoot != "" && !filepath.IsAbs(candidate) {
+		joined := filepath.Join(workspaceRoot, candidate)
+		if info, err := os.Stat(joined); err == nil && !info.IsDir() && info.Size() > 0 && info.Size() <= 100*1024*1024 {
+			return joined
+		}
+	}
+	if cwd, err := os.Getwd(); err == nil && !filepath.IsAbs(candidate) {
+		joined := filepath.Join(cwd, candidate)
+		if info, err := os.Stat(joined); err == nil && !info.IsDir() && info.Size() > 0 && info.Size() <= 100*1024*1024 {
+			return joined
+		}
+	}
+	return ""
+}
+
+func (app *App) processMentionedLocalFiles(text string, workspaceRoot, ownerToken string, out *PreprocessedAttachments, seenFiles map[string]bool) {
+	candidates := findPotentialLocalFiles(text)
+	for _, cand := range candidates {
+		realPath := resolveExistingLocalPath(cand, workspaceRoot)
+		if realPath == "" || seenFiles[realPath] {
+			continue
+		}
+		seenFiles[realPath] = true
+
+		raw, err := os.ReadFile(realPath)
+		if err != nil {
+			continue
+		}
+		filename := filepath.Base(realPath)
+		ext := strings.ToLower(filepath.Ext(filename))
+		contentType := mime.TypeByExtension(ext)
+		if contentType == "" {
+			switch ext {
+			case ".png":
+				contentType = "image/png"
+			case ".jpg", ".jpeg":
+				contentType = "image/jpeg"
+			case ".webp":
+				contentType = "image/webp"
+			case ".gif":
+				contentType = "image/gif"
+			case ".mp4":
+				contentType = "video/mp4"
+			case ".pdf":
+				contentType = "application/pdf"
+			default:
+				contentType = "application/octet-stream"
+			}
+		}
+
+		record, err := app.saveLocalBytes(filename, contentType, raw, "local-mention", "user-upload", ownerToken, true)
+		if err != nil {
+			continue
+		}
+		out.UploadedFileIDs = append(out.UploadedFileIDs, record.ID)
+		out.Attachments = append(out.Attachments, NormalizedAttachment{
+			FileID:      record.ID,
+			Filename:    record.Filename,
+			ContentType: record.ContentType,
+			Source:      "local-mention",
+			LocalPath:   record.Path,
+			SHA256:      record.SHA256,
+			Purpose:     "user-upload",
+		})
+	}
+}
+
 func (app *App) preprocessAttachments(payload map[string]any, ownerToken string) (PreprocessedAttachments, error) {
 	rewritten := deepCopyMap(payload)
 	out := PreprocessedAttachments{Payload: rewritten}
+	workspaceRoot := deriveWorkspaceRoot(rewritten)
+	seenMentionFiles := map[string]bool{}
+
 	for msgIndex, rawMsg := range anyList(rewritten["messages"]) {
 		msg, ok := rawMsg.(map[string]any)
 		if !ok {
+			continue
+		}
+		if strContent, ok := msg["content"].(string); ok && strContent != "" {
+			app.processMentionedLocalFiles(strContent, workspaceRoot, ownerToken, &out, seenMentionFiles)
 			continue
 		}
 		contentList, ok := msg["content"].([]any)
@@ -652,33 +770,37 @@ func (app *App) preprocessAttachments(payload map[string]any, ownerToken string)
 			if !ok {
 				continue
 			}
+			if textStr := stringValue(part, "text", ""); textStr != "" {
+				app.processMentionedLocalFiles(textStr, workspaceRoot, ownerToken, &out, seenMentionFiles)
+			}
 			partType := stringValue(part, "type", "")
 			switch partType {
 			case "image_url":
 				imageURL, _ := part["image_url"].(map[string]any)
 				urlText := strings.TrimSpace(anyString(firstNonNil(imageURL["url"], part["url"]), ""))
-				if !strings.HasPrefix(urlText, "data:") {
-					continue
+				if strings.HasPrefix(urlText, "data:") {
+					contentType, bytesValue, err := decodeDataURI(urlText)
+					if err != nil {
+						return PreprocessedAttachments{}, err
+					}
+					record, err := app.saveLocalBytes("inline-image", contentType, bytesValue, "inline-image", "user-upload", ownerToken, true)
+					if err != nil {
+						return PreprocessedAttachments{}, err
+					}
+					out.UploadedFileIDs = append(out.UploadedFileIDs, record.ID)
+					out.Attachments = append(out.Attachments, NormalizedAttachment{
+						FileID:      record.ID,
+						Filename:    record.Filename,
+						ContentType: record.ContentType,
+						Source:      "inline-image",
+						LocalPath:   record.Path,
+						SHA256:      record.SHA256,
+						Purpose:     "user-upload",
+					})
+					contentList[partIndex] = map[string]any{"type": "input_image", "file_id": record.ID, "mime_type": contentType, "filename": record.Filename}
+				} else {
+					app.processMentionedLocalFiles(urlText, workspaceRoot, ownerToken, &out, seenMentionFiles)
 				}
-				contentType, bytesValue, err := decodeDataURI(urlText)
-				if err != nil {
-					return PreprocessedAttachments{}, err
-				}
-				record, err := app.saveLocalBytes("inline-image", contentType, bytesValue, "inline-image", "user-upload", ownerToken, true)
-				if err != nil {
-					return PreprocessedAttachments{}, err
-				}
-				out.UploadedFileIDs = append(out.UploadedFileIDs, record.ID)
-				out.Attachments = append(out.Attachments, NormalizedAttachment{
-					FileID:      record.ID,
-					Filename:    record.Filename,
-					ContentType: record.ContentType,
-					Source:      "inline-image",
-					LocalPath:   record.Path,
-					SHA256:      record.SHA256,
-					Purpose:     "user-upload",
-				})
-				contentList[partIndex] = map[string]any{"type": "input_image", "file_id": record.ID, "mime_type": contentType, "filename": record.Filename}
 			case "input_file", "file":
 				if existingFileID := strings.TrimSpace(anyString(part["file_id"], "")); existingFileID != "" {
 					record, err := app.getUploadedLocalFile(existingFileID, ownerToken)
@@ -737,6 +859,9 @@ func (app *App) preprocessAttachments(payload map[string]any, ownerToken string)
 		anyListValue := anyList(rewritten["messages"])
 		anyListValue[msgIndex] = msg
 		rewritten["messages"] = anyListValue
+	}
+	if promptStr := stringValue(rewritten, "prompt", ""); promptStr != "" {
+		app.processMentionedLocalFiles(promptStr, workspaceRoot, ownerToken, &out, seenMentionFiles)
 	}
 	return out, nil
 }
@@ -941,10 +1066,18 @@ func (app *App) uploadLocalFileToUpstream(ctx context.Context, acc *Account, loc
 		return nil, err
 	}
 	contentType := firstNonEmpty(local.ContentType, mime.TypeByExtension(filepath.Ext(local.Filename)), "application/octet-stream")
+	fileClass := upstreamFileClass(contentType)
+	qwenFileType := "file"
+	if fileClass == "image" {
+		qwenFileType = "image"
+	} else if fileClass == "video" {
+		qwenFileType = "video"
+	}
+
 	status, text, err := app.client.requestJSON(ctx, http.MethodPost, "/api/v2/files/getstsToken", acc.Token, map[string]any{
 		"filename": local.Filename,
 		"filesize": len(raw),
-		"filetype": "file",
+		"filetype": qwenFileType,
 	}, 20*time.Second)
 	if err != nil {
 		return nil, err
@@ -989,48 +1122,51 @@ func (app *App) uploadLocalFileToUpstream(ctx context.Context, acc *Account, loc
 		return nil, err
 	}
 
-	status, text, err = app.client.requestJSON(ctx, http.MethodPost, "/api/v2/files/parse", acc.Token, map[string]any{"file_id": fileID}, 20*time.Second)
-	if err != nil {
-		return nil, err
-	}
-	if status != http.StatusOK {
-		return nil, fmt.Errorf("files/parse failed: %d %s", status, truncate(text, 200))
-	}
-
-	deadline := time.Now().Add(time.Duration(maxInt(app.settings.ContextUploadParseTimeoutSeconds, 1)) * time.Second)
-	parseStatus := "pending"
-	for time.Now().Before(deadline) {
-		status, text, err = app.client.requestJSON(ctx, http.MethodPost, "/api/v2/files/parse/status", acc.Token, map[string]any{"file_id_list": []string{fileID}}, 20*time.Second)
+	parseStatus := "success"
+	if qwenFileType == "file" {
+		status, text, err = app.client.requestJSON(ctx, http.MethodPost, "/api/v2/files/parse", acc.Token, map[string]any{"file_id": fileID}, 20*time.Second)
 		if err != nil {
 			return nil, err
 		}
 		if status != http.StatusOK {
-			return nil, fmt.Errorf("files/parse/status failed: %d %s", status, truncate(text, 200))
+			return nil, fmt.Errorf("files/parse failed: %d %s", status, truncate(text, 200))
 		}
-		var payload map[string]any
-		if err := json.Unmarshal([]byte(text), &payload); err != nil {
-			return nil, err
+
+		deadline := time.Now().Add(time.Duration(maxInt(app.settings.ContextUploadParseTimeoutSeconds, 1)) * time.Second)
+		parseStatus = "pending"
+		for time.Now().Before(deadline) {
+			status, text, err = app.client.requestJSON(ctx, http.MethodPost, "/api/v2/files/parse/status", acc.Token, map[string]any{"file_id_list": []string{fileID}}, 20*time.Second)
+			if err != nil {
+				return nil, err
+			}
+			if status != http.StatusOK {
+				return nil, fmt.Errorf("files/parse/status failed: %d %s", status, truncate(text, 200))
+			}
+			var payload map[string]any
+			if err := json.Unmarshal([]byte(text), &payload); err != nil {
+				return nil, err
+			}
+			rows := anyList(payload["data"])
+			row := map[string]any{}
+			if len(rows) > 0 {
+				row, _ = rows[0].(map[string]any)
+			}
+			parseStatus = anyString(row["status"], "pending")
+			if parseStatus == "success" {
+				break
+			}
+			if parseStatus == "failed" || parseStatus == "error" {
+				return nil, fmt.Errorf("file parse failed: %s", truncate(mustJSON(row), 200))
+			}
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(defaultContextUploadPoll):
+			}
 		}
-		rows := anyList(payload["data"])
-		row := map[string]any{}
-		if len(rows) > 0 {
-			row, _ = rows[0].(map[string]any)
+		if parseStatus != "success" {
+			return nil, fmt.Errorf("file parse timeout: %s", fileID)
 		}
-		parseStatus = anyString(row["status"], "pending")
-		if parseStatus == "success" {
-			break
-		}
-		if parseStatus == "failed" || parseStatus == "error" {
-			return nil, fmt.Errorf("file parse failed: %s", truncate(mustJSON(row), 200))
-		}
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(defaultContextUploadPoll):
-		}
-	}
-	if parseStatus != "success" {
-		return nil, fmt.Errorf("file parse timeout: %s", fileID)
 	}
 
 	nowMillis := time.Now().UnixMilli()
@@ -1038,38 +1174,88 @@ func (app *App) uploadLocalFileToUpstream(ctx context.Context, acc *Account, loc
 	if parts := strings.SplitN(strings.TrimLeft(filePathRemote, "/"), "/", 2); len(parts) >= 2 {
 		userID = parts[0]
 	}
-	putURL := "https://" + bucketName + "." + endpoint + "/" + strings.TrimLeft(filePathRemote, "/")
-	remoteRef := map[string]any{
-		"type": "file",
-		"file": map[string]any{
-			"created_at": nowMillis,
-			"data":       map[string]any{},
-			"filename":   local.Filename,
-			"hash":       nil,
-			"id":         fileID,
-			"user_id":    userID,
-			"meta": map[string]any{
-				"name":         local.Filename,
-				"size":         len(raw),
-				"content_type": contentType,
-				"parse_meta":   map[string]any{"parse_status": parseStatus},
+	putURL := anyString(stsData["file_url"], "")
+	if putURL == "" {
+		putURL = "https://" + bucketName + "." + endpoint + "/" + strings.TrimLeft(filePathRemote, "/")
+	}
+
+	var remoteRef map[string]any
+	if qwenFileType == "image" {
+		remoteRef = map[string]any{
+			"type": "image",
+			"file": map[string]any{
+				"created_at": nowMillis,
+				"data":       map[string]any{},
+				"filename":   local.Filename,
+				"id":         fileID,
+				"meta": map[string]any{
+					"name":         local.Filename,
+					"size":         len(raw),
+					"content_type": "",
+				},
+				"update_at": nowMillis,
 			},
-			"update_at": nowMillis,
-		},
-		"id":              fileID,
-		"url":             putURL,
-		"name":            local.Filename,
-		"collection_name": "",
-		"progress":        0,
-		"status":          "uploaded",
-		"greenNet":        "success",
-		"size":            len(raw),
-		"error":           "",
-		"itemId":          randomID(),
-		"file_type":       contentType,
-		"showType":        "file",
-		"file_class":      upstreamFileClass(contentType),
-		"uploadTaskId":    randomID(),
+			"id":           fileID,
+			"url":          putURL,
+			"name":         local.Filename,
+			"image_width":  1000,
+			"image_height": 1000,
+			"size":         len(raw),
+		}
+	} else if qwenFileType == "video" {
+		remoteRef = map[string]any{
+			"type": "video",
+			"file": map[string]any{
+				"created_at": nowMillis,
+				"data":       map[string]any{},
+				"filename":   local.Filename,
+				"id":         fileID,
+				"meta": map[string]any{
+					"name":         local.Filename,
+					"size":         len(raw),
+					"content_type": "video",
+				},
+				"update_at": nowMillis,
+			},
+			"id":        fileID,
+			"url":       putURL,
+			"name":      local.Filename,
+			"file_type": strings.TrimPrefix(filepath.Ext(local.Filename), "."),
+			"size":      len(raw),
+		}
+	} else {
+		remoteRef = map[string]any{
+			"type": "file",
+			"file": map[string]any{
+				"created_at": nowMillis,
+				"data":       map[string]any{},
+				"filename":   local.Filename,
+				"hash":       nil,
+				"id":         fileID,
+				"user_id":    userID,
+				"meta": map[string]any{
+					"name":         local.Filename,
+					"size":         len(raw),
+					"content_type": contentType,
+					"parse_meta":   map[string]any{"parse_status": parseStatus},
+				},
+				"update_at": nowMillis,
+			},
+			"id":              fileID,
+			"url":             putURL,
+			"name":            local.Filename,
+			"collection_name": "",
+			"progress":        0,
+			"status":          "uploaded",
+			"greenNet":        "success",
+			"size":            len(raw),
+			"error":           "",
+			"itemId":          randomID(),
+			"file_type":       strings.TrimPrefix(filepath.Ext(local.Filename), "."),
+			"showType":        "file",
+			"file_class":      upstreamFileClass(contentType),
+			"uploadTaskId":    randomID(),
+		}
 	}
 	return map[string]any{
 		"remote_file_id":    fileID,

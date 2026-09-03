@@ -66,6 +66,7 @@ type App struct {
 	sessionStore      *JSONStore
 	fileContentCache  *fileContentCache
 	keepalive         *KeepAliveService
+	activityLogs      *ActivityLogBuffer
 }
 
 func main() {
@@ -171,6 +172,7 @@ func NewApp(settings Settings, logger *slog.Logger) (*App, error) {
 	app.client = NewQwenClient(app.accounts, settings, logger)
 	app.chatPool = NewChatIDPool(app.client, app.accounts, settings, logger)
 	app.keepalive = NewKeepAliveService(logger)
+	app.activityLogs = newActivityLogBuffer(200)
 	return app, nil
 }
 
@@ -2438,6 +2440,8 @@ func (app *App) routes() http.Handler {
 	mux.HandleFunc("DELETE /api/admin/keys/{key}", app.adminDeleteKey)
 	mux.HandleFunc("GET /admin/dev/captures", app.adminGetCaptures)
 	mux.HandleFunc("DELETE /admin/dev/captures", app.adminDeleteCaptures)
+	mux.HandleFunc("GET /api/admin/logs", app.adminGetActivityLogs)
+	mux.HandleFunc("DELETE /api/admin/logs", app.adminClearActivityLogs)
 	mux.HandleFunc("GET /", app.handleSPA)
 
 	return app.withRequestLogging(app.withCORS(mux))
@@ -4637,6 +4641,8 @@ func (app *App) recordStandardRequest(ctx context.Context, req StandardRequest) 
 		"stream", boolLogValue(req.Stream),
 		"tool_enabled", boolLogValue(req.ToolEnabled),
 		"prompt_len", len(req.Prompt),
+		"prompt_text", promptTail(req.Prompt, 1200),
+		"tools", req.ToolNames,
 		"test_marker", testMarker,
 	)
 	app.logInfo(ctx, "标准请求解析完成",
@@ -4694,9 +4700,19 @@ func (app *App) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := app.runCompletion(r.Context(), req, "")
 	if err != nil {
+		setRequestLogFields(r.Context(), "error", err.Error())
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	toolNames := []string{}
+	for _, tc := range result.ToolCalls {
+		toolNames = append(toolNames, tc.Name)
+	}
+	setRequestLogFields(r.Context(),
+		"response_text", result.AnswerText,
+		"finish_reason", result.FinishReason,
+		"tool_calls", toolNames,
+	)
 	writeJSON(w, http.StatusOK, buildOpenAICompletionPayload(id, created, req, result))
 }
 
@@ -4729,6 +4745,7 @@ func (app *App) streamOpenAI(w http.ResponseWriter, r *http.Request, req Standar
 			if delta == "" || toolCallsSent {
 				return nil
 			}
+			appendResponseLogDelta(r.Context(), delta)
 			_, _ = w.Write([]byte(openAIChunk(id, created, req.ResponseModel, map[string]any{"content": delta}, nil)))
 			if flusher != nil {
 				flusher.Flush()
@@ -4739,6 +4756,11 @@ func (app *App) streamOpenAI(w http.ResponseWriter, r *http.Request, req Standar
 			if toolCallsSent {
 				return nil
 			}
+			toolNames := []string{}
+			for _, tc := range calls {
+				toolNames = append(toolNames, tc.Name)
+			}
+			setRequestLogFields(r.Context(), "tool_calls", toolNames, "finish_reason", "tool_calls")
 			app.logParsedToolCalls(r.Context(), "ToolCall", "openai_stream_response", calls)
 			app.logInfo(r.Context(), "[ToolDirective]", "tool_blocks", len(calls), "raw_tool_blocks", len(calls), "stop_reason", "tool_calls", "has_tool_use", true)
 			for idx, call := range openAIToolCalls(calls) {
@@ -6823,6 +6845,33 @@ func (app *App) adminDeleteCaptures(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
+func (app *App) adminGetActivityLogs(w http.ResponseWriter, r *http.Request) {
+	if _, ok := app.verifyAdmin(w, r); !ok {
+		return
+	}
+	limit := 50
+	if lStr := r.URL.Query().Get("limit"); lStr != "" {
+		if val, err := strconv.Atoi(lStr); err == nil && val > 0 {
+			limit = val
+		}
+	}
+	account := r.URL.Query().Get("account")
+	surface := r.URL.Query().Get("surface")
+	logs := app.activityLogs.List(limit, account, surface)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"logs":  logs,
+		"total": len(logs),
+	})
+}
+
+func (app *App) adminClearActivityLogs(w http.ResponseWriter, r *http.Request) {
+	if _, ok := app.verifyAdmin(w, r); !ok {
+		return
+	}
+	app.activityLogs.Clear()
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
 // ---- migrated from models.go ----
 func buildModelEntry(modelID, baseModel string, capabilities map[string]bool, mode, displayName, family string, created int64, ownedBy string) map[string]any {
 	if baseModel == "" {
@@ -8558,6 +8607,105 @@ var logTestMarkers = []string{
 	"TEST_LONG_INPUT_20260601",
 }
 
+type ActivityLogItem struct {
+	ID             string   `json:"id"`
+	Timestamp      int64    `json:"timestamp"`
+	TimeFormatted  string   `json:"time_formatted"`
+	Method         string   `json:"method"`
+	Path           string   `json:"path"`
+	Surface        string   `json:"surface"`
+	RequestedModel string   `json:"requested_model"`
+	ResolvedModel  string   `json:"resolved_model"`
+	Account        string   `json:"account"`
+	ChatID         string   `json:"chat_id"`
+	Status         int      `json:"status"`
+	DurationMs     int64    `json:"duration_ms"`
+	Prompt         string   `json:"prompt"`
+	Response       string   `json:"response"`
+	Tools          []string `json:"tools,omitempty"`
+	ToolCalls      []string `json:"tool_calls,omitempty"`
+	FinishReason   string   `json:"finish_reason,omitempty"`
+	Stream         bool     `json:"stream"`
+	Error          string   `json:"error,omitempty"`
+}
+
+type ActivityLogBuffer struct {
+	mu    sync.RWMutex
+	items []ActivityLogItem
+	max   int
+}
+
+func newActivityLogBuffer(max int) *ActivityLogBuffer {
+	if max <= 0 {
+		max = 200
+	}
+	return &ActivityLogBuffer{
+		items: make([]ActivityLogItem, 0, max),
+		max:   max,
+	}
+}
+
+func (b *ActivityLogBuffer) Add(item ActivityLogItem) {
+	if b == nil {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.items = append(b.items, item)
+	if len(b.items) > b.max {
+		b.items = b.items[len(b.items)-b.max:]
+	}
+}
+
+func (b *ActivityLogBuffer) List(limit int, account, surface string) []ActivityLogItem {
+	if b == nil {
+		return []ActivityLogItem{}
+	}
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	n := len(b.items)
+	if n == 0 {
+		return []ActivityLogItem{}
+	}
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	res := make([]ActivityLogItem, 0, min(n, limit))
+	for i := n - 1; i >= 0; i-- {
+		item := b.items[i]
+		if account != "" && !strings.Contains(strings.ToLower(item.Account), strings.ToLower(account)) {
+			continue
+		}
+		if surface != "" && item.Surface != surface {
+			continue
+		}
+		res = append(res, item)
+		if len(res) >= limit {
+			break
+		}
+	}
+	return res
+}
+
+func (b *ActivityLogBuffer) Clear() {
+	if b == nil {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.items = make([]ActivityLogItem, 0, b.max)
+}
+
+func appendResponseLogDelta(ctx context.Context, delta string) {
+	if info := requestLogFromContext(ctx); info != nil {
+		info.mu.Lock()
+		if len(info.ResponseText) < 1500 {
+			info.ResponseText += delta
+		}
+		info.mu.Unlock()
+	}
+}
+
 type requestLogContextKey struct{}
 
 type requestLogContext struct {
@@ -8572,6 +8720,12 @@ type requestLogContext struct {
 	ToolEnabled    string
 	TestMarker     string
 	PromptLen      int
+	PromptText     string
+	ResponseText   string
+	Tools          []string
+	ToolCalls      []string
+	FinishReason   string
+	Error          string
 	Start          time.Time
 }
 
@@ -8662,6 +8816,43 @@ func (app *App) withRequestLogging(next http.Handler) http.Handler {
 			} else {
 				app.logInfo(ctx, "请求完成", attrs...)
 			}
+
+			if logCtx.Surface != "probe" &&
+				!strings.HasPrefix(r.URL.Path, "/api/admin/") &&
+				!strings.HasPrefix(r.URL.Path, "/assets/") &&
+				!strings.HasPrefix(r.URL.Path, "/favicon") &&
+				!strings.HasSuffix(r.URL.Path, ".ico") &&
+				!strings.HasSuffix(r.URL.Path, ".png") &&
+				!strings.HasSuffix(r.URL.Path, ".svg") &&
+				!strings.HasSuffix(r.URL.Path, ".js") &&
+				!strings.HasSuffix(r.URL.Path, ".css") &&
+				r.URL.Path != "/" {
+
+				logCtx.mu.Lock()
+				item := ActivityLogItem{
+					ID:             logCtx.ReqID,
+					Timestamp:      logCtx.Start.Unix(),
+					TimeFormatted:  logCtx.Start.Format("15:04:05"),
+					Method:         r.Method,
+					Path:           r.URL.Path,
+					Surface:        logCtx.Surface,
+					RequestedModel: logCtx.RequestedModel,
+					ResolvedModel:  logCtx.ResolvedModel,
+					Account:        logCtx.Account,
+					ChatID:         logCtx.ChatID,
+					Status:         status,
+					DurationMs:     time.Since(logCtx.Start).Milliseconds(),
+					Prompt:         logCtx.PromptText,
+					Response:       logCtx.ResponseText,
+					Tools:          logCtx.Tools,
+					ToolCalls:      logCtx.ToolCalls,
+					FinishReason:   logCtx.FinishReason,
+					Stream:         logCtx.Stream == "true",
+					Error:          logCtx.Error,
+				}
+				logCtx.mu.Unlock()
+				app.activityLogs.Add(item)
+			}
 		}()
 
 		next.ServeHTTP(recorder, r)
@@ -8727,6 +8918,22 @@ func setRequestLogFields(ctx context.Context, fields ...any) {
 		case "prompt_len":
 			if value, ok := fields[i+1].(int); ok {
 				info.PromptLen = value
+			}
+		case "prompt_text":
+			info.PromptText = anyString(fields[i+1], info.PromptText)
+		case "response_text":
+			info.ResponseText = anyString(fields[i+1], info.ResponseText)
+		case "finish_reason":
+			info.FinishReason = anyString(fields[i+1], info.FinishReason)
+		case "error":
+			info.Error = anyString(fields[i+1], info.Error)
+		case "tools":
+			if list, ok := fields[i+1].([]string); ok {
+				info.Tools = list
+			}
+		case "tool_calls":
+			if list, ok := fields[i+1].([]string); ok {
+				info.ToolCalls = list
 			}
 		}
 	}

@@ -158,7 +158,36 @@ Semua endpoint kompatibel dengan format standar OpenAI, Anthropic, dan Google Ge
 - **API Key**: API Key dari menu **API Key** di WebUI (misal: `sk-...` atau `admin123456`)
 - **Model ID**: `qwen3.6-plus` atau `qwen3.7-plus`
 
-### 2. Contoh Penggunaan via Python (OpenAI SDK)
+### 2. Integrasi dengan Claude Code (Anthropic CLI Agent)
+Gateway ini menyediakan endpoint Anthropic penuh (`/v1/messages` dan `/anthropic/v1/messages`) yang mendukung pemanggilan tool otomatis (`Bash`, `Read`, `Write`, `Edit`, `Glob`, `Grep`).
+
+#### Opsi A: Ekspor Environment Variables
+```bash
+export ANTHROPIC_BASE_URL="http://127.0.0.1:7860"
+export ANTHROPIC_API_KEY="admin123456"       # atau API Key kustom Anda
+export ANTHROPIC_MODEL="qwen3.7-plus"       # rekomendasi: qwen3.7-plus atau qwen3.8-max
+export CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT="1"
+
+claude
+```
+
+#### Opsi B: Konfigurasi Permanen `~/.claude/settings.json`
+```json
+{
+  "theme": "dark",
+  "env": {
+    "ANTHROPIC_BASE_URL": "http://127.0.0.1:7860",
+    "ANTHROPIC_API_KEY": "admin123456"
+  },
+  "model": "qwen3.7-plus"
+}
+```
+
+> [!TIP]
+> - **Jika Claude Code dijalankan di server/VPS yang sama dengan gateway:** Gunakan URL `http://127.0.0.1:7860`.
+> - **Jika Claude Code dijalankan di komputer/laptop lokal:** Ganti URL dengan IP server VPS Anda, misalnya `http://IP_VPS_ANDA:7860`.
+
+### 3. Contoh Penggunaan via Python (OpenAI SDK)
 
 ```python
 from openai import OpenAI
@@ -197,7 +226,7 @@ tool_response = client.chat.completions.create(
 print("Tool Calls:", tool_response.choices[0].message.tool_calls)
 ```
 
-### 3. Contoh cURL Chat Completions
+### 4. Contoh cURL Chat Completions
 
 ```bash
 curl -X POST http://127.0.0.1:7860/v1/chat/completions \

@@ -150,6 +150,50 @@ Semua endpoint kompatibel dengan format standar OpenAI, Anthropic, dan Google Ge
 
 ---
 
+## 📋 Daftar Model yang Didukung
+
+Gateway ini menyediakan akses ke seluruh model resmi Qwen serta mendukung varian mode fitur dan alias kompatibilitas:
+
+### 1. Model Dasar (Base Models)
+| Model ID | Deskripsi & Rekomendasi Penggunaan | Kapabilitas Utama |
+|---|---|---|
+| `qwen3.7-plus` | **Model Rekomendasi Utama** ⚡ — Sangat cepat, cerdas, ideal untuk coding agent (Cline, Roo, Claude Code). | Chat, Tool Use, Vision, Web Search |
+| `qwen3.8-max` | Model dengan kapasitas penalaran dan kedalaman logika tertinggi untuk instruksi kompleks. | Chat, Deep Reasoning, Tool Use |
+| `qwen3.7-max` | Model performa tinggi untuk penulisan, analisis data, dan tugas komprehensif. | Chat, Reasoning, Tool Use |
+| `qwen3.6-plus` | Model generasi 3.6 yang stabil, mendukung beragam fungsi multimedia dan tools. | Chat, Audio/Vision, Tool Use |
+| `qwen3.5-plus` | Model handal dan cepat untuk percakapan teks umum. | Chat, Tool Use |
+| `qwen3.5-omni-plus` | Model multimodal yang mendukung pemrosesan dokumen, audio, dan visual. | Multimodal Audio & Vision |
+
+### 2. Akhiran Fitur / Suffix Modes
+Anda dapat menambahkan akhiran (*suffix*) ke Model ID dasar untuk memicu mode kapabilitas tertentu secara langsung:
+
+| Suffix | Contoh Model ID | Deskripsi Fitur |
+|---|---|---|
+| `-thinking` | `qwen3.7-plus-thinking` | Mengaktifkan penalaran mendalam (*deep thinking/reasoning token*) sebelum menjawab |
+| `-search` | `qwen3.7-plus-search` | Mengaktifkan pencarian web langsung (*real-time live web search*) |
+| `-deep-research` | `qwen3.7-plus-deep-research` | Mode riset komprehensif berbasis penelusuran multi-sumber web |
+| `-image` | `qwen3.7-plus-image` | Pembuatan gambar AI (*Text-to-Image* via WanX 2.1) |
+| `-video` | `qwen3.7-plus-video` | Pembuatan video AI (*Text-to-Video* via WanX 2.1) |
+| `-webdev` | `qwen3.7-plus-webdev` | Dioptimalkan khusus untuk pembuatan artefak kode web frontend/fullstack |
+| `-slides` | `qwen3.7-plus-slides` | Dioptimalkan khusus untuk pembuatan outline dan konten presentasi |
+
+### 3. Alias Kompatibilitas Otomatis (Model Aliases)
+Jika menggunakan aplikasi pihak ketiga yang mewajibkan penamaan model standar, gateway akan secara otomatis mengarahkan permintaan ke model Qwen yang setara:
+
+- **OpenAI Aliases**: `gpt-4o`, `gpt-4-turbo`, `gpt-4`, `gpt-5`, `o1`, `o3` ➔ otomatis dipetakan ke `qwen3.6-plus`
+- **OpenAI Mini Aliases**: `gpt-4o-mini`, `gpt-4.1-mini`, `gpt-3.5-turbo`, `o1-mini`, `o3-mini` ➔ otomatis dipetakan ke `qwen3.5-flash`
+- **Anthropic Aliases**: `claude-3.5-sonnet`, `claude-sonnet-4-5`, `claude-opus-4-6`, `claude-3-opus` ➔ otomatis dipetakan ke `qwen3.6-plus`; `claude-3-haiku` ➔ `qwen3.5-flash`
+- **Gemini Aliases**: `gemini-2.5-pro` ➔ `qwen3.6-plus`; `gemini-2.5-flash` ➔ `qwen3.5-flash`
+- **DeepSeek Aliases**: `deepseek-chat`, `deepseek-reasoner` ➔ `qwen3.6-plus`
+
+> [!TIP]
+> Untuk memeriksa daftar lengkap model yang aktif secara dinamis melalui API, panggil:
+> ```bash
+> curl -H "Authorization: Bearer <API_KEY>" http://127.0.0.1:7860/v1/models
+> ```
+
+---
+
 ## 🤖 Integrasi AI Agent & Tools
 
 ### 1. Integrasi dengan Cline / Roo Code (VS Code Extension)
